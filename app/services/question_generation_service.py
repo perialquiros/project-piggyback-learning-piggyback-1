@@ -144,7 +144,7 @@ def generate_questions_for_segment(
     duration = end_time - start_time + 1  # inclusive window
     #Provider is requested- scope so Admin switch model backend without changing flow.
     provider_name = (provider or "openai").strip().lower()
-    if provider_name not in {"openai", "gemini," "claude"}:
+    if provider_name not in {"openai", "gemini","claude"}:
         provider_name = "openai"
 
 
@@ -376,9 +376,11 @@ Return JSON only (no extra text) in this structure:
                         max_tokens=1024,
                         messages=[{"role": "user", "content": parts}]
                     )
-                    result_content = getattr(resp, "text", None)
+                    if resp.content:
+                        result_content= resp.content[0].text
+                    else:
+                        result_content = None
                     finish_reason = None
-
                     
                 if finish_reason == "content_filter":
                     last_error_payload = {
