@@ -36,7 +36,7 @@ sidebar_position: 5
 1. The system plays the video and pauses at a question timestamp.
 2. The system displays a question based on the admin-configured mode:
    - **Answer required:** The child must answer before the video continues.
-   - **Skip allowed:** The child can answer or press “Skip” to continue watching.
+   - **Keep going allowed:**  video pauses, child answers but if wrong can press "Keep Going" to continue anyway.
    - **Auto-play:** No question is shown; the video plays straight through.
 3. If answering, the child speaks their answer using voice input.
 4. The system evaluates the answer and shows whether it is correct or incorrect.
@@ -49,7 +49,7 @@ sidebar_position: 5
 1. After logging in, the admin selects the 'Administrator' option on the 'Choose your role' page.
 2. The admin clicks on the 'Dashboard' button.
 3. The admin views a page containing Piggyback's results, including response scores, time watched, and other insights.
-4. The admin views a page containing Piggyback's results, including response scores, time watched, and other insights.
+V4. The admin views a page containing Piggyback's results, including response scores, time watched, and other insights.
 
 ## Use Case 6 - Expert review
 *As a parent or guardian, I want to be able to review and modify the quizzes for my child.*
@@ -64,5 +64,5 @@ sidebar_position: 5
 *As an admin, I want to set how a child interacts with the video so I can customize their learning experience.*
 1. Admin logs into the admin panel.
 2. Admin selects a child or session.
-3. Admin chooses the interaction mode: "Answer to continue," "Skip allowed," or "Auto-play."
+3. Admin chooses the interaction mode: "Answer to continue," "Keep going allowed," or "Auto-play."
 4. System saves the settings and applies them when the child opens the app.

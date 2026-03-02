@@ -27,6 +27,7 @@ classDiagram
         -title: string
         -questions: List~Question~
         -approved: boolean
+        -interactionMode: string
 
         +addQuestion(question)
         +setApproved(status)
@@ -98,12 +99,23 @@ classDiagram
         +playVideo(timestamp)
         +submitAnswer(answer)
         +rewindVideo(timestamp)
+        +keepGoing()
     }
 
     class AdminUI {
         +uploadVideo(video)
         +approveQuiz(quizId)
         +viewDashboard()
+        +setInteractionMode(mode)
+        +linkChild(childId)
+    }
+
+    class Admin {
+    -id: string
+    -children: List~Child~
+
+    +addChild(childId)
+    +configureSession(childId, mode)
     }
 
     class ExpertUI {
@@ -111,7 +123,7 @@ classDiagram
         +editQuestion(question)
         +saveQuiz(quiz)
     }
-
+    Admin --> AdminUI
     KidsUI --> QuizManager
     AdminUI --> QuizManager
     ExpertUI --> QuizManager
