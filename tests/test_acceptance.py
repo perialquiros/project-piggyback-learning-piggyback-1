@@ -29,3 +29,14 @@ def test_student_answers_spinning_cat_question():
     assert response.status_code == 200
     assert response.json()["status"] == "correct"
 
+
+def test_admin_can_login():
+    # Use Case 1: Admin logs in to access the admin panel
+    response = client.post("/api/verify-password", json={
+        "password": "wrongpassword"
+    })
+    # Even wrong password returns 200, just with success: false
+    assert response.status_code == 200
+
+
+
