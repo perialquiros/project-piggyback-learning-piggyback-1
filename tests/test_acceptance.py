@@ -32,11 +32,24 @@ def test_student_answers_spinning_cat_question():
 
 def test_admin_can_login():
     # Use Case 1: Admin logs in to access the admin panel
-    response = client.post("/api/verify-password", json={
+    response = client.post("/api/verify-password", data={
+        "user_type": "admin",
         "password": "wrongpassword"
     })
     # Even wrong password returns 200, just with success: false
     assert response.status_code == 200
 
 
+def test_student_loads_app_and_answers_correctly():
+    # App loads
+    config_response = client.get("/api/config")
+    assert config_response.status_code == 200
 
+    # Learner answers correctly
+    answer_response = client.post("/api/check_answer", json={
+        "expected": "cat",
+        "user": "cat",
+        "question": "what animal is in the video"
+    })
+    assert answer_response.status_code == 200
+    assert answer_response.json()["status"] == "correct"
