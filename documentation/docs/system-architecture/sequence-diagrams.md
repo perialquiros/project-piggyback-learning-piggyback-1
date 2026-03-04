@@ -70,22 +70,31 @@ sequenceDiagram
     participant System
     participant Video
 
-    Child->>App:Sstart Video
-    App->>System: Display question
-    Child->>App: Answer using voice
-    App->>System: Evaluate answer
-    alt Answer correct
-        System-->>App: Move to next question
-    else Answer incorrect
-        App->>Child: Show options "Rewind Video" or "Keep Going"
-        alt Rewind Video
-            App->>Video: Rewind to question timestamp
-            Video-->>Child: Play segment
-            Child->>App: Return to question or continue
-        else Keep Going
-            System-->>App: Move to next question
+    Child->>App: Start video
+    App->>Video: Play video
+    Video-->>App: Pause at question timestamp
+    alt Answer required
+        App->>Child: Display question, must answer to continue
+        Child->>App: Speak answer
+        App->>System: Evaluate answer
+        System-->>App: Correct, resume video
+    else Keep going allowed
+        App->>Child: Display question
+        Child->>App: Speak answer
+        App->>System: Evaluate answer
+        alt Answer incorrect
+            App->>Child: Show "Rewind Video" or "Keep Going"
+            alt Rewind Video
+                App->>Video: Rewind to timestamp
+                Video-->>Child: Play segment
+            else Keep Going
+                App->>Video: Resume video
+            end
         end
+    else Auto-play
+        App->>Video: Continue playing, no question shown
     end
+    
 ```
 
 ## Use case 5 - Parental report
@@ -123,4 +132,22 @@ sequenceDiagram
     Admin->>App: Modify question as needed
     App->>System: Save updated quiz
     System-->>App: Quiz ready for child selection
+```
+
+## Use case 7 - Admin configures child's learning conditions
+
+```mermaid
+sequenceDiagram
+    participant Admin
+    participant App
+    participant System
+
+    Admin->>App: Log in
+    App->>Admin: Display admin panel
+    Admin->>App: Select a child or session
+    App->>Admin: Show current settings
+    Admin->>App: Choose interaction mode
+    App->>System: Save mode configuration
+    System-->>App: Settings saved
+    App-->>Admin: Confirmation displayed
 ```
