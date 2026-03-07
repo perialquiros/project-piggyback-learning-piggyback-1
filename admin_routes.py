@@ -19,6 +19,17 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 #Pulls shared path from settings.py so all module uses the same directory
 from app.settings import DOWNLOADS_DIR, TEMPLATES_DIR
+
+from app.services.expert_auth_service import (
+    assign_video,
+    create_expert,
+    deactivate_expert,
+    list_experts,
+    update_expert,
+    ensure_video_assignment_rows,
+    get_video_assignment,
+    list_video_assignments,
+)
 # ----- Local paths (keep consistent with main.py) -----
 #maybe needed if not delete later, should be duplicates with shared setting imports.
 #TODO- might delete this 
@@ -247,6 +258,138 @@ def admin_page(request: Request):
 # =========================================================
 # Admin API
 # =========================================================
+# Admin loads all expert accounts for management UI.
+@router_admin_api.get("/admin/experts")
+def api_admin_list_experts():
+    return {"success": True, "experts": list_experts()}
+
+
+# Admin creates a new expert with ID + display name + password.
+@router_admin_api.post("/admin/experts")
+async def api_admin_create_expert(payload: Dict[str, Any] = Body(...)):
+    expert_id = str(payload.get("expert_id") or "").strip()
+    display_name = str(payload.get("display_name") or "").strip()
+    password = str(payload.get("password") or "")
+
+    try:
+        expert = create_expert(expert_id, display_name, password)
+        return {"success": True, "expert": expert}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        if str(exc) == "duplicate_expert_id":
+            raise HTTPException(status_code=409, detail="expert_id already exists")
+        raise
+
+
+# Admin updates fields selectively (rename, reset password, activate/deactivate).
+@router_admin_api.put("/admin/experts/{expert_id}")
+async def api_admin_update_expert(expert_id: str, payload: Dict[str, Any] = Body(...)):
+    display_name = payload.get("display_name")
+    password = payload.get("password")
+    is_active = payload.get("is_active")
+
+    if display_name is not None:
+        display_name = str(display_name)
+    if password is not None:
+        password = str(password)
+    if is_active is not None and not isinstance(is_active, bool):
+        raise HTTPException(status_code=400, detail="is_active must be true or false")
+
+    try:
+        expert = update_expert(
+            expert_id,
+            display_name=display_name,
+            password=password,
+            is_active=is_active,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if not expert:
+        raise HTTPException(status_code=404, detail="expert not found")
+    return {"success": True, "expert": expert}
+
+# Explicit deactivate action for a simple one-click admin control.
+@router_admin_api.post("/admin/experts/{expert_id}/deactivate")
+async def api_admin_deactivate_expert(expert_id: str):
+    expert = deactivate_expert(expert_id)
+    if not expert:
+        raise HTTPException(status_code=404, detail="expert not found")
+    return {"success": True, "expert": expert}
+
+#Admin loads video + current experrt assignment state for assignment UI bootstrap 
+@router_admin_api.get("/admin/videos/assignments")
+def api_admin_list_video_assignments():
+    videos = _collect_downloaded_videos(include_without_frames=True)
+    video_ids = [video["video_id"] for video in videos]
+    ensure_video_assignment_rows(video_ids)
+
+    assignment_lookup = {
+        row["video_id"]: row for row in list_video_assignments()
+    }
+
+    rows: List[Dict[str, Any]] = []
+    for video in videos:
+        assignment = assignment_lookup.get(video["video_id"], {})
+        expert_id = assignment.get("expert_id")
+        rows.append(
+            {
+                "video_id": video["video_id"],
+                "title": video.get("title") or video["video_id"],
+                "duration_formatted": video.get("duration_formatted"),
+                "has_frames": bool(video.get("has_frames")),
+                "has_questions": bool(video.get("has_questions")),
+                "expert_id": expert_id,
+                "expert_name": assignment.get("expert_name"),
+                "assignment_source": assignment.get("assignment_source") or "unassigned",
+                "claimable": not bool(expert_id),
+            }
+        )
+
+    return {
+        "success": True,
+        "experts": list_experts(),
+        "assignments": rows,
+    }
+
+
+# Admin assigns/reassigns/clears video ownership.
+@router_admin_api.post("/admin/videos/assignments")
+async def api_admin_set_video_assignment(payload: Dict[str, Any] = Body(...)):
+    video_id = str(payload.get("video_id") or "").strip()
+    raw_expert_id = payload.get("expert_id")
+    expert_id = str(raw_expert_id).strip() if raw_expert_id is not None else ""
+
+    if not video_id:
+        raise HTTPException(status_code=400, detail="video_id is required")
+
+    video_dir = DOWNLOADS_DIR / video_id
+    if not video_dir.exists() or not video_dir.is_dir():
+        raise HTTPException(status_code=404, detail="video not found in downloads")
+
+    try:
+        if expert_id:
+            assign_video(video_id, expert_id, source="admin")
+        else:
+            assign_video(video_id, None, source="unassigned")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    assignment = get_video_assignment(video_id)
+    return {
+        "success": True,
+        "assignment": {
+            "video_id": video_id,
+            "expert_id": assignment.get("expert_id") if assignment else None,
+            "expert_name": assignment.get("expert_name") if assignment else None,
+            "assignment_source": assignment.get("assignment_source") if assignment else "unassigned",
+            "assigned_at": assignment.get("assigned_at") if assignment else None,
+            "updated_at": assignment.get("updated_at") if assignment else None,
+            "claimable": not bool(assignment and assignment.get("expert_id")),
+        },
+    }
+
 @router_admin_api.post("/download")
 async def api_download(url: str = Form(...)):
     # Lazy import to avoid circular dependency
@@ -259,7 +402,6 @@ async def api_download(url: str = Form(...)):
 @router_admin_api.post("/frames/{video_id}")
 async def api_extract_frames(video_id: str):
     from app.services.frame_service import extract_frames_per_second_for_video
-
     return extract_frames_per_second_for_video(video_id)
 
 

@@ -10,6 +10,9 @@ from app.services.expert_auth_service import (
     authenticate_expert,
     can_expert_access_video,
     claim_video_for_expert,
+    ensure_video_assignment_rows,
+    get_video_assignment,
+    list_video_assignments,
 )
 
 from fastapi import (
@@ -79,6 +82,28 @@ def require_expert_session(request: Request) -> Dict[str,str]:
         "expert_id":str(expert_id),
         "display_name":str(display_name or expert_id),
     }
+
+
+def require_expert_video_access(
+    request: Request, video_id: str, auto_claim: bool = False
+) -> Dict[str, str]:
+    expert_identity = require_expert_session(request)
+    normalized_video_id = (video_id or "").strip()
+
+    if not normalized_video_id:
+        raise HTTPException(status_code=400, detail="video_id is required")
+
+    if can_expert_access_video(expert_identity["expert_id"], normalized_video_id):
+        return expert_identity
+
+    if auto_claim:
+        try:
+            claim_video_for_expert(expert_identity["expert_id"], normalized_video_id)
+            return expert_identity
+        except Exception:
+            pass
+
+    raise HTTPException(status_code=403, detail="Forbidden")
 
 
 
@@ -182,6 +207,9 @@ def expert_preview(
     mode: Optional[str] = Query("review"),
 ):
     expert_identity = require_expert_session(request)
+    if video:
+        require_expert_video_access(request, video, auto_claim=False)
+
     preview_data = build_expert_preview_data(file=file, video=video, mode=mode)
     context = {
         "request": request,
@@ -263,31 +291,175 @@ async def list_videos():
 
 @app.get("/api/expert-questions/{video_id}")
 async def get_expert_questions(request: Request, video_id: str):
-    expert_identity = require_expert_session(request)
-    if not can_expert_access_video(expert_identity["expert_id"], video_id):
-        return JSONResponse({"success": False, "message": "Forbidden"}, status_code=403)
-    
+    try:
+        require_expert_video_access(request, video_id, auto_claim=False)
+    except HTTPException as exc:
+        return JSONResponse(
+            {"success": False, "message": exc.detail}, status_code=exc.status_code
+        )
+
+    result, status_code = get_expert_questions_payload(video_id)
+    return JSONResponse(result, status_code=status_code)
 
 #protect save expert question route
 @app.post("/api/expert-questions")
 async def save_expert_question(request: Request, payload: Dict[str, Any] = Body(...)):
-    expert_identity = require_expert_session(request)
     video_id = str(payload.get("videoId") or payload.get("video_id") or "").strip()
     if not video_id:
-        return JSONResponse({"success": False, "message": "videoId is required"}, status_code=400)
+        return JSONResponse(
+            {"success": False, "message": "videoId is required"}, status_code=400
+        )
 
-    if (DOWNLOADS_DIR / video_id).exists() and not can_expert_access_video(expert_identity["expert_id"], video_id):
-        try:
-            claim_video_for_expert(expert_identity["expert_id"], video_id)
-        except Exception:
-            return JSONResponse({"success": False, "message": "Forbidden"}, status_code=403)
-        
+    if not (DOWNLOADS_DIR / video_id).exists():
+        return JSONResponse({"success": False, "message": "Video not found"}, status_code=404)
+
+    try:
+        require_expert_video_access(request, video_id, auto_claim=True)
+    except HTTPException as exc:
+        return JSONResponse(
+            {"success": False, "message": exc.detail}, status_code=exc.status_code
+        )
+
+    result, status_code = save_expert_question_payload(payload)
+    return JSONResponse(result, status_code=status_code)
 
 
 @app.post("/api/save-final-questions")
 async def save_final_questions(request: Request, payload: Dict[str, Any] = Body(...)):
+    video_id = str(payload.get("videoId") or "").strip()
+    if not video_id:
+        return JSONResponse({"success": False, "message": "videoId is required"}, status_code=400)
+
+    if not (DOWNLOADS_DIR / video_id).exists():
+        return JSONResponse({"success": False, "message": "Video not found"}, status_code=404)
+
+    try:
+        require_expert_video_access(request, video_id, auto_claim=True)
+    except HTTPException as exc:
+        return JSONResponse(
+            {"success": False, "message": exc.detail}, status_code=exc.status_code
+        )
+
     result, status_code = save_final_questions_payload(payload)
     return JSONResponse(result, status_code=status_code)
+
+
+@app.get("/api/expert/videos")
+async def list_expert_videos(request: Request):
+    try:
+        expert_identity = require_expert_session(request)
+    except HTTPException as exc:
+        return JSONResponse(
+            {"success": False, "message": exc.detail, "videos": []},
+            status_code=exc.status_code,
+        )
+
+    videos: List[Dict[str, Any]] = []
+    if not DOWNLOADS_DIR.exists():
+        return JSONResponse({"success": True, "videos": []})
+
+    for video_dir in sorted(DOWNLOADS_DIR.iterdir()):
+        if not video_dir.is_dir():
+            continue
+
+        video_id = video_dir.name
+        meta_path = video_dir / "meta.json"
+        meta_data: Dict[str, Any] = {}
+        if meta_path.exists():
+            try:
+                meta_data = json.loads(meta_path.read_text(encoding="utf-8"))
+            except Exception:
+                meta_data = {}
+
+        title = meta_data.get("title", video_id)
+        thumbnail = meta_data.get("thumbnail", "")
+        duration = meta_data.get("duration", 0)
+
+        video_file = find_primary_video_file(video_dir)
+        if not video_file:
+            continue
+
+        questions_dir = video_dir / "questions"
+        question_files = []
+        if questions_dir.exists():
+            question_files = [p for p in questions_dir.glob("*.json") if p.is_file()]
+
+        video_url = f"/downloads/{video_file.relative_to(DOWNLOADS_DIR).as_posix()}"
+        videos.append(
+            {
+                "id": video_id,
+                "title": title,
+                "thumbnail": thumbnail,
+                "duration": duration,
+                "videoUrl": video_url,
+                "questionCount": len(question_files),
+            }
+        )
+
+    video_ids = [video["id"] for video in videos]
+    ensure_video_assignment_rows(video_ids)
+    assignments_map = {
+        row["video_id"]: row for row in list_video_assignments()
+    }
+
+    expert_id = expert_identity["expert_id"]
+    filtered: List[Dict[str, Any]] = []
+    for video in videos:
+        assignment = assignments_map.get(video["id"])
+        if not assignment:
+            assignment = get_video_assignment(video["id"])
+
+        assigned_expert_id = (assignment or {}).get("expert_id")
+        assigned_to_me = bool(assigned_expert_id == expert_id)
+        claimable = not assigned_expert_id
+
+        if not assigned_to_me and not claimable:
+            continue
+
+        filtered.append(
+            {
+                **video,
+                "expert_id": assigned_expert_id,
+                "expert_name": (assignment or {}).get("expert_name"),
+                "assignment_source": (assignment or {}).get("assignment_source")
+                or "unassigned",
+                "assigned_to_me": assigned_to_me,
+                "claimable": claimable,
+            }
+        )
+
+    return JSONResponse({"success": True, "videos": filtered})
+
+
+@app.post("/api/expert/videos/{video_id}/claim")
+async def claim_expert_video(request: Request, video_id: str):
+    normalized_video_id = (video_id or "").strip()
+    if not normalized_video_id:
+        return JSONResponse({"success": False, "message": "video_id is required"}, status_code=400)
+
+    if not (DOWNLOADS_DIR / normalized_video_id).exists():
+        return JSONResponse({"success": False, "message": "Video not found"}, status_code=404)
+
+    try:
+        expert_identity = require_expert_session(request)
+    except HTTPException as exc:
+        return JSONResponse(
+            {"success": False, "message": exc.detail}, status_code=exc.status_code
+        )
+
+    try:
+        assignment = claim_video_for_expert(expert_identity["expert_id"], normalized_video_id)
+    except RuntimeError as exc:
+        if str(exc) == "assigned_to_other_expert":
+            return JSONResponse(
+                {"success": False, "message": "Video is already assigned to another expert"},
+                status_code=409,
+            )
+        return JSONResponse({"success": False, "message": "Unable to claim video"}, status_code=400)
+    except Exception as exc:
+        return JSONResponse({"success": False, "message": str(exc)}, status_code=400)
+
+    return JSONResponse({"success": True, "assignment": assignment})
 
 
 @app.post("/api/tts")

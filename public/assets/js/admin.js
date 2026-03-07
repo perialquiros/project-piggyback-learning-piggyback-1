@@ -1,7 +1,9 @@
 
 
 
-
+        let expertDashboardLoaded = false;
+        let adminExperts = [];
+        let adminAssignments = []; 
         let currentStep = 1;
         let currentVideoId = null;
         let generatedQuestions = [];
@@ -45,6 +47,18 @@
             if (refreshExistingBtn) {
                 refreshExistingBtn.addEventListener('click', () => loadExistingDownloads(true));
             }
+
+            //wire form submit + refresh button
+            const createExpertForm = document.getElementById('create-expert-form');
+            if (createExpertForm) {
+                createExpertForm.addEventListener('submit', handleCreateExpert);
+            }
+
+            const refreshAssignmentsBtn = document.getElementById('refresh-assignments-btn');
+            if (refreshAssignmentsBtn) {
+                refreshAssignmentsBtn.addEventListener('click', () => loadExpertDashboard(true));
+            }
+
         }
         
         function updateStepDisplay() {
@@ -264,7 +278,7 @@
             const sections = document.querySelectorAll('.admin-section');
 
                 tabButtons.forEach((btn) => {
-                    btn.addEventListener('click', () => {
+                    btn.addEventListener('click', async() => {
                         const targetId = btn.getAttribute('data-target');
 
                         tabButtons.forEach((b) => b.classList.remove('active'));
@@ -273,6 +287,10 @@
                         sections.forEach((section) => {
                             section.classList.toggle('active', section.id === targetId);
                         });
+                        // lazy-load experrt data only when that tab opens
+                        if (targetId === 'assign-experts' && !expertDashboardLoaded){
+                            await loadExpertDashboard(false);
+                        }
                     });
                 });
             }
@@ -392,7 +410,205 @@
             const url = document.getElementById('youtube_url').value;
             await downloadVideo(url);
         }
-        
+        function setAdminPanelStatus(elementId, message, type = 'info') {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    el.className = `status-message status-${type}`;
+    el.textContent = message;
+    el.style.display = 'block';
+}
+
+async function loadExpertDashboard(showRefreshMessage = false) {
+    const res = await fetch('/api/admin/videos/assignments');
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+        throw new Error(data.detail || data.message || 'Failed to load expert dashboard');
+    }
+
+    adminExperts = Array.isArray(data.experts) ? data.experts : [];
+    adminAssignments = Array.isArray(data.assignments) ? data.assignments : [];
+    expertDashboardLoaded = true;
+
+    renderExpertTable();
+    renderAssignmentTable();
+
+    if (showRefreshMessage) {
+        setAdminPanelStatus('assignment-admin-status', 'Assignments refreshed.', 'success');
+    }
+}
+
+function renderExpertTable() {
+    const tbody = document.getElementById('expert-list-tbody');
+    if (!tbody) return;
+
+    if (!adminExperts.length) {
+        tbody.innerHTML = '<tr><td colspan="4">No experts yet.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = adminExperts.map((expert) => `
+        <tr data-expert-id="${expert.expert_id}" data-active="${expert.is_active ? '1' : '0'}">
+            <td>${expert.expert_id}</td>
+            <td><input type="text" data-role="name" value="${expert.display_name || ''}" /></td>
+            <td>${expert.is_active ? 'Active' : 'Inactive'}</td>
+            <td>
+                <input type="password" data-role="password" placeholder="New password (optional)" />
+                <button type="button" class="btn btn-outline" data-action="save-expert">Save</button>
+                <button type="button" class="btn" data-action="toggle-expert">${expert.is_active ? 'Deactivate' : 'Activate'}</button>
+            </td>
+        </tr>
+    `).join('');
+
+    tbody.querySelectorAll('[data-action="save-expert"]').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+            const row = e.currentTarget.closest('tr');
+            await handleSaveExpert(row);
+        });
+    });
+
+    tbody.querySelectorAll('[data-action="toggle-expert"]').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+            const row = e.currentTarget.closest('tr');
+            await handleToggleExpert(row);
+        });
+    });
+}
+
+function renderAssignmentTable() {
+    const tbody = document.getElementById('assignment-list-tbody');
+    if (!tbody) return;
+
+    if (!adminAssignments.length) {
+        tbody.innerHTML = '<tr><td colspan="4">No downloaded videos found.</td></tr>';
+        return;
+    }
+
+    const expertOptions = adminExperts
+        .map((expert) => `<option value="${expert.expert_id}">${expert.display_name} (${expert.expert_id})${expert.is_active ? '' : ' [inactive]'}</option>`)
+        .join('');
+
+    tbody.innerHTML = adminAssignments.map((row) => `
+        <tr data-video-id="${row.video_id}">
+            <td>${row.title || row.video_id}<br><small>${row.video_id}</small></td>
+            <td>${row.expert_name ? `${row.expert_name} (${row.expert_id})` : 'Unassigned'}</td>
+            <td>
+                <select data-role="assignment-expert">
+                    <option value="">Unassigned</option>
+                    ${expertOptions}
+                </select>
+            </td>
+            <td>
+                <button type="button" class="btn btn-success" data-action="save-assignment">Save</button>
+            </td>
+        </tr>
+    `).join('');
+
+    tbody.querySelectorAll('tr').forEach((tr) => {
+        const current = adminAssignments.find((x) => x.video_id === tr.dataset.videoId);
+        const select = tr.querySelector('select[data-role="assignment-expert"]');
+        if (select && current && current.expert_id) {
+            select.value = current.expert_id;
+        }
+    });
+
+    tbody.querySelectorAll('[data-action="save-assignment"]').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+            const row = e.currentTarget.closest('tr');
+            await handleSaveAssignment(row);
+        });
+    });
+}
+
+async function handleCreateExpert(event) {
+    event.preventDefault();
+
+    const expert_id = document.getElementById('new-expert-id').value.trim();
+    const display_name = document.getElementById('new-expert-name').value.trim();
+    const password = document.getElementById('new-expert-password').value;
+
+    const res = await fetch('/api/admin/experts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expert_id, display_name, password })
+    });
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+        throw new Error(data.detail || data.message || 'Failed to create expert');
+    }
+
+    event.target.reset();
+    setAdminPanelStatus('expert-admin-status', 'Expert created.', 'success');
+    await loadExpertDashboard(false);
+}
+
+    async function handleSaveExpert(row) {
+        const expertId = row.dataset.expertId;
+        const displayName = row.querySelector('[data-role="name"]').value.trim();
+        const password = row.querySelector('[data-role="password"]').value;
+
+        const payload = { display_name: displayName, is_active: row.dataset.active === '1' };
+        if (password) payload.password = password;
+
+        const res = await fetch(`/api/admin/experts/${encodeURIComponent(expertId)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+            throw new Error(data.detail || data.message || 'Failed to update expert');
+        }
+
+        setAdminPanelStatus('expert-admin-status', 'Expert updated.', 'success');
+        await loadExpertDashboard(false);
+    }
+
+    async function handleToggleExpert(row) {
+        const expertId = row.dataset.expertId;
+        const isActive = row.dataset.active === '1';
+
+        let res;
+        if (isActive) {
+            res = await fetch(`/api/admin/experts/${encodeURIComponent(expertId)}/deactivate`, { method: 'POST' });
+        } else {
+            res = await fetch(`/api/admin/experts/${encodeURIComponent(expertId)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_active: true })
+            });
+        }
+
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.detail || data.message || 'Failed to toggle expert');
+        }
+
+        setAdminPanelStatus('expert-admin-status', isActive ? 'Expert deactivated.' : 'Expert activated.', 'success');
+        await loadExpertDashboard(false);
+    }
+
+    async function handleSaveAssignment(row) {
+        const videoId = row.dataset.videoId;
+        const select = row.querySelector('select[data-role="assignment-expert"]');
+        const expertId = select ? select.value : '';
+
+        const res = await fetch('/api/admin/videos/assignments', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ video_id: videoId, expert_id: expertId || null })
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+            throw new Error(data.detail || data.message || 'Failed to save assignment');
+        }
+
+        setAdminPanelStatus('assignment-admin-status', 'Assignment saved.', 'success');
+        await loadExpertDashboard(false);
+    }
         async function downloadVideo(url) {
             showLoading('download-loading', true);
             document.getElementById('download-result').style.display = 'block';
@@ -676,16 +892,7 @@
         }
 
             
-            const newWindow = window.open('', '_blank');
-            newWindow.document.write(`
-                <html>
-                    <head><title>Questions Preview - ${currentVideoId}</title></head>
-                    <body style="font-family: Arial, sans-serif; padding: 20px;">
-                        <h2>Questions Preview</h2>
-                        <pre style="background: #f5f5f5; padding: 20px; border-radius: 8px; overflow: auto;">${JSON.stringify(preview, null, 2)}</pre>
-                    </body>
-                </html>
-            `);
+            
         
         
         
