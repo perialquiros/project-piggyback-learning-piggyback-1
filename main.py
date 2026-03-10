@@ -401,13 +401,14 @@ async def list_expert_videos(request: Request):
         #get all experts assigned to this video from the new many -to - many table
         assigned_experts = list_experts_for_video(video["id"])
         assigned_to_me = any(e["expert_id"] == expert_id for e in assigned_experts)
-        filtered.append(
-            {
-                **video,
-                "assigned_to_me": assigned_to_me,
-                "assigned_expert_count": len(assigned_experts),
-            }
-        )
+        if assigned_to_me:
+            filtered.append(
+                {
+                    **video,
+                    "assigned_to_me":True,
+                    "assigned_expert_count": len(assigned_experts),
+                }
+            )
     return JSONResponse({"success": True, "videos": filtered})
 
 

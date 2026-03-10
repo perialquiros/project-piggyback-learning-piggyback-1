@@ -3637,7 +3637,7 @@
             }
 
             try {
-                const response = await fetch('/api/videos-list');
+                const response = await fetch('/api/expert/videos');
                 const data = await response.json();
 
                 if (data.success && Array.isArray(data.videos)) {
