@@ -488,36 +488,56 @@ function renderAssignmentTable() {
         .map((expert) => `<option value="${expert.expert_id}">${expert.display_name} (${expert.expert_id})${expert.is_active ? '' : ' [inactive]'}</option>`)
         .join('');
 
-    tbody.innerHTML = adminAssignments.map((row) => `
-        <tr data-video-id="${row.video_id}">
-            <td>${row.title || row.video_id}<br><small>${row.video_id}</small></td>
-            <td>${row.expert_name ? `${row.expert_name} (${row.expert_id})` : 'Unassigned'}</td>
-            <td>
-                <select data-role="assignment-expert">
-                    <option value="">Unassigned</option>
-                    ${expertOptions}
-                </select>
-            </td>
-            <td>
-                <button type="button" class="btn btn-success" data-action="save-assignment">Save</button>
-            </td>
-        </tr>
+    tbody.innerHTML = adminAssignments.map((row) => {
+    // build chips for each already-assigned expert
+    const chips = (row.assigned_experts || []).map((e) => `
+        <span class="badge bg-secondary me-1">
+            ${e.expert_name || e.expert_id}
+            <button type="button" class="btn-close btn-close-white btn-sm ms-1"
+                data-action="remove-assignment"
+                data-video-id="${row.video_id}"
+                data-expert-id="${e.expert_id}"
+                aria-label="Remove">
+            </button>
+        </span>
     `).join('');
 
-    tbody.querySelectorAll('tr').forEach((tr) => {
-        const current = adminAssignments.find((x) => x.video_id === tr.dataset.videoId);
-        const select = tr.querySelector('select[data-role="assignment-expert"]');
-        if (select && current && current.expert_id) {
-            select.value = current.expert_id;
-        }
-    });
+    return `
+        <tr data-video-id="${row.video_id}">
+            <td>${row.title || row.video_id}<br><small>${row.video_id}</small></td>
+            <td>${
+    chips
+        ? `<details><summary>${(row.assigned_experts || []).length} expert(s)</summary>${chips}</details>`
+        : '<span class="text-muted">Unassigned</span>'
+    }</td>
+                <td>
+                    <select data-role="assignment-expert">
+                        <option value="">-- select expert --</option>
+                        ${expertOptions}
+                    </select>
+                    <button type="button" class="btn btn-success btn-sm ms-1" data-action="add-assignment">Add</button>
+                </td>
+            </tr>
+        `;
+}).join('');
 
-    tbody.querySelectorAll('[data-action="save-assignment"]').forEach((btn) => {
+// Add assignment
+    tbody.querySelectorAll('[data-action="add-assignment"]').forEach((btn) => {
         btn.addEventListener('click', async (e) => {
             const row = e.currentTarget.closest('tr');
-            await handleSaveAssignment(row);
+            await handleAddAssignment(row);
         });
     });
+
+    // Remove assignment
+    tbody.querySelectorAll('[data-action="remove-assignment"]').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+            const videoId = e.currentTarget.dataset.videoId;
+            const expertId = e.currentTarget.dataset.expertId;
+            await handleRemoveAssignment(videoId, expertId);
+        });
+    });
+
 }
 
 async function handleCreateExpert(event) {
@@ -590,25 +610,32 @@ async function handleCreateExpert(event) {
         await loadExpertDashboard(false);
     }
 
-    async function handleSaveAssignment(row) {
-        const videoId = row.dataset.videoId;
-        const select = row.querySelector('select[data-role="assignment-expert"]');
-        const expertId = select ? select.value : '';
+    async function handleAddAssignment(row) {
+    const videoId = row.dataset.videoId;
+    const select = row.querySelector('select[data-role="assignment-expert"]');
+    const expertId = select ? select.value : '';
+    if (!expertId) { alert('Select an expert first.'); return; }
 
-        const res = await fetch('/api/admin/videos/assignments', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ video_id: videoId, expert_id: expertId || null })
-        });
-        const data = await res.json();
+    const res = await fetch('/api/admin/videos/assignments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video_id: videoId, expert_id: expertId, op: 'add' })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.detail || 'Failed to add assignment');
+    await loadExpertDashboard(false);
+}
 
-        if (!res.ok || !data.success) {
-            throw new Error(data.detail || data.message || 'Failed to save assignment');
-        }
-
-        setAdminPanelStatus('assignment-admin-status', 'Assignment saved.', 'success');
-        await loadExpertDashboard(false);
-    }
+async function handleRemoveAssignment(videoId, expertId) {
+    const res = await fetch('/api/admin/videos/assignments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video_id: videoId, expert_id: expertId, op: 'remove' })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.success) throw new Error(data.detail || 'Failed to remove assignment');
+    await loadExpertDashboard(false);
+}
         async function downloadVideo(url) {
             showLoading('download-loading', true);
             document.getElementById('download-result').style.display = 'block';
