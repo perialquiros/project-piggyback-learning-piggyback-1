@@ -242,52 +242,28 @@ def ensure_video_assignment_rows(video_ids: List[str]) -> None:
             )
         conn.commit()
 
-
-def assign_video(video_id: str, expert_id: Optional[str], source: str = "admin") -> None:
+def add_video_assignment(video_id,expert_id,source : str = "admin"):
+    # Upsert a video-expert pair into the many-to-many table.
     video_id = (video_id or "").strip()
+    expert_id = (expert_id or "").strip()
+    
     if not video_id:
-        raise ValueError("video_id is required")
-
+        raise ValueError ("video_id is required")
+    
+    if not expert_id:
+        raise ValueError("expert_id is required")
+    
     if source not in {"admin", "expert_claim", "unassigned"}:
         raise ValueError("invalid assignment source")
-
-    normalized_expert_id = normalize_expert_id(expert_id or "")
+    # If the pair already exists, just update the source and timestamp.
     now = utc_now_iso()
-
     with get_conn() as conn:
-        if normalized_expert_id:
-            exists = conn.execute(
-                "SELECT 1 FROM experts WHERE expert_id = ? AND is_active = 1",
-                (normalized_expert_id,),
-            ).fetchone()
-            if not exists:
-                raise ValueError("expert_id does not exist or is inactive")
-
-            conn.execute(
-                """
-                INSERT INTO video_assignments (video_id, expert_id, assignment_source, assigned_at, updated_at)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(video_id) DO UPDATE SET
-                    expert_id = excluded.expert_id,
-                    assignment_source = excluded.assignment_source,
-                    assigned_at = excluded.assigned_at,
-                    updated_at = excluded.updated_at
-                """,
-                (video_id, normalized_expert_id, source, now, now),
-            )
-        else:
-            conn.execute(
-                """
-                INSERT INTO video_assignments (video_id, expert_id, assignment_source, assigned_at, updated_at)
-                VALUES (?, NULL, 'unassigned', NULL, ?)
-                ON CONFLICT(video_id) DO UPDATE SET
-                    expert_id = NULL,
-                    assignment_source = 'unassigned',
-                    assigned_at = NULL,
-                    updated_at = excluded.updated_at
-                """,
-                (video_id, now),
-            )
+        conn.execute("""
+        INSERT INTO video_expert_assignments (video_id, expert_id, assignment_source, assigned_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(video_id, expert_id) DO UPDATE SET
+        assignment_source = excluded.assignment_source,
+        updated_at = excluded.updated_at """,(video_id,expert_id,source,now,now))
         conn.commit()
 
 
