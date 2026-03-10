@@ -25,6 +25,7 @@ from app.services.expert_auth_service import (
     create_expert,
     deactivate_expert,
     list_experts,
+    delete_expert,
     update_expert,
     remove_video_assignment,
     list_experts_for_video,
@@ -316,6 +317,14 @@ async def api_admin_deactivate_expert(expert_id: str):
     if not expert:
         raise HTTPException(status_code=404, detail="expert not found")
     return {"success": True, "expert": expert}
+
+#delete
+@router_admin_api.delete("/admin/experts/{expert_id}")
+async def api_admin_delete_expert(expert_id: str):
+    deleted = delete_expert(expert_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="expert not found")
+    return {"success": True}
 
 #Admin loads video + current expert assignment state for assignment UI bootstrap
 @router_admin_api.get("/admin/videos/assignments")

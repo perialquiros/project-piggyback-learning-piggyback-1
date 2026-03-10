@@ -456,6 +456,7 @@ function renderExpertTable() {
                 <input type="password" data-role="password" placeholder="New password (optional)" />
                 <button type="button" class="btn btn-outline" data-action="save-expert">Save</button>
                 <button type="button" class="btn" data-action="toggle-expert">${expert.is_active ? 'Deactivate' : 'Activate'}</button>
+                <button type="button" class="btn btn-danger" data-action="remove-expert">Remove</button>
             </td>
         </tr>
     `).join('');
@@ -473,6 +474,12 @@ function renderExpertTable() {
             await handleToggleExpert(row);
         });
     });
+    tbody.querySelectorAll('[data-action="remove-expert"]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+        const row = e.currentTarget.closest('tr');
+        await handleRemoveExpert(row);
+    });
+});
 }
 
 function renderAssignmentTable() {
@@ -609,7 +616,18 @@ async function handleCreateExpert(event) {
         setAdminPanelStatus('expert-admin-status', isActive ? 'Expert deactivated.' : 'Expert activated.', 'success');
         await loadExpertDashboard(false);
     }
-
+    async function handleRemoveExpert(row) {
+        const expertId = row.dataset.expertId;
+        if (!confirm(`Permanently remove expert "${expertId}"? This cannot be undone.`)) return;
+        const resp = await fetch(`/api/admin/experts/${encodeURIComponent(expertId)}`, { method: 'DELETE' });
+        const data = await resp.json();
+        if (data.success) {
+            adminExperts = adminExperts.filter(e => e.expert_id !== expertId);
+            renderExpertTable();
+        } else {
+            alert('Failed to remove expert.');
+        }
+    }
     async function handleAddAssignment(row) {
     const videoId = row.dataset.videoId;
     const select = row.querySelector('select[data-role="assignment-expert"]');

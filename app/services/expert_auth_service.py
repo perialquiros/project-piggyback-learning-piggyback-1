@@ -194,6 +194,13 @@ def update_expert(
 def deactivate_expert(expert_id: str) -> Optional[Dict[str, Any]]:
     return update_expert(expert_id, is_active=False)
 
+def delete_expert(expert_id: str) -> bool:
+    expert_id = normalize_expert_id(expert_id)
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM experts WHERE expert_id = ?", (expert_id,))
+        conn.commit()
+        return cur.rowcount > 0
+
 
 def authenticate_expert(expert_id: str, password: str) -> Optional[Dict[str, Any]]:
     expert_id = normalize_expert_id(expert_id)
