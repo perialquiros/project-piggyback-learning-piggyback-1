@@ -13,6 +13,7 @@ from app.services.children_service import (
     generate_child_id,
     list_children,
     update_child,
+    get_child,
 )
 
 
@@ -23,6 +24,7 @@ from app.services.expert_auth_service import (
     can_expert_access_video,
     claim_video_for_expert,
     create_expert,
+    delete_expert,
 )
 #make a value to test
 def setup_module():
@@ -143,3 +145,51 @@ def test_update_and_deactivate_child():
 
     assert not any(c["child_id"] == child["child_id"] for c in active_children)
     assert any(c["child_id"] == child["child_id"] and c["is_active"] is False for c in all_children)
+    
+    
+#more test on childrens condition
+
+def test_update_child_unlink_sets_expert_id_none():
+    expert = _new_expert()
+    suffix = uuid4().hex[:6]
+    child = create_child(expert["expert_id"], f"Mia{suffix}", "Lin", "fox")
+
+    updated = update_child(child["child_id"], expert_id="")
+
+    assert updated is not None
+    assert updated["expert_id"] is None
+
+
+def test_update_child_links_unlinked_child_back_to_expert():
+    expert_a = _new_expert()
+    expert_b = _new_expert()
+    suffix = uuid4().hex[:6]
+    child = create_child(expert_a["expert_id"], f"Noah{suffix}", "Kim", "bear")
+
+    update_child(child["child_id"], expert_id="")
+    relinked = update_child(child["child_id"], expert_id=expert_b["expert_id"])
+
+    assert relinked is not None
+    assert relinked["expert_id"] == expert_b["expert_id"]
+
+
+def test_update_child_rejects_unknown_expert_id():
+    expert = _new_expert()
+    suffix = uuid4().hex[:6]
+    child = create_child(expert["expert_id"], f"Ivy{suffix}", "Cho", "owl")
+
+    with pytest.raises(ValueError, match="expert_id not found"):
+        update_child(child["child_id"], expert_id="exp_does_not_exist")
+
+
+def test_delete_expert_auto_unlinks_children():
+    expert = _new_expert()
+    suffix = uuid4().hex[:6]
+    child = create_child(expert["expert_id"], f"Leo{suffix}", "Park", "cat")
+
+    deleted = delete_expert(expert["expert_id"])
+    loaded = get_child(child["child_id"], include_inactive=True)
+
+    assert deleted is True
+    assert loaded is not None
+    assert loaded["expert_id"] is None
