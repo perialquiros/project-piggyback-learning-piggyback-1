@@ -15,6 +15,68 @@ def get_conn() -> sqlite3.Connection:
     return conn
 
 
+def _children_needs_unlink_migration(conn: sqlite3.Connection) -> bool:
+    rows = conn.execute("PRAGMA table_info(children)").fetchall()
+    if not rows:
+        return False
+    for row in rows:
+        if row["name"] == "expert_id":
+            # old schema had NOT NULL expert_id, new schema allows NULL for unlink
+            return bool(row["notnull"])
+    return False
+
+
+def _migrate_children_for_unlink(conn: sqlite3.Connection) -> None:
+    if not _children_needs_unlink_migration(conn):
+        return
+
+    conn.execute("PRAGMA foreign_keys = OFF;")
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS children_new(
+            child_id TEXT PRIMARY KEY
+            CHECK(
+                length(child_id) = 6
+                AND child_id GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
+            ),
+            expert_id TEXT NULL,
+            first_name TEXT NOT NULL,
+            last_name TEXT NOT NULL,
+            icon_key TEXT NOT NULL,
+            is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0,1)),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            FOREIGN KEY(expert_id) REFERENCES experts(expert_id)
+                ON UPDATE CASCADE
+                ON DELETE SET NULL
+        );
+
+        INSERT INTO children_new
+        (child_id, expert_id, first_name, last_name, icon_key, is_active, created_at, updated_at)
+        SELECT
+            child_id, expert_id, first_name, last_name, icon_key, is_active, created_at, updated_at
+        FROM children;
+
+        DROP TABLE children;
+        ALTER TABLE children_new RENAME TO children;
+
+        CREATE INDEX IF NOT EXISTS idx_children_expert_id
+            ON children (expert_id);
+
+        CREATE INDEX IF NOT EXISTS idx_children_active_expert
+            ON children (expert_id, is_active);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_children_unique_profile_per_expert
+            ON children (
+                expert_id,
+                lower(trim(first_name)),
+                lower(trim(last_name))
+            );
+        """
+    )
+    conn.execute("PRAGMA foreign_keys = ON;")
+
+
 def init_db() -> None:
     #creates table on start up 
     with get_conn() as conn:
@@ -82,7 +144,7 @@ def init_db() -> None:
                     length(child_id) = 6
                     AND child_id GLOB '[0-9][0-9][0-9][0-9][0-9][0-9]'
                 ),
-                expert_id TEXT NOT NULL,
+                expert_id TEXT NULL,
                 first_name TEXT NOT NULL,
                 last_name TEXT NOT NULL,
                 icon_key TEXT NOT NULL,
@@ -91,7 +153,7 @@ def init_db() -> None:
                 updated_at TEXT NOT NULL,
                 FOREIGN KEY(expert_id) REFERENCES experts(expert_id)
                     ON UPDATE CASCADE
-                    ON DELETE RESTRICT      
+                    ON DELETE SET NULL
             );
             
             CREATE INDEX IF NOT EXISTS idx_children_expert_id
@@ -113,5 +175,5 @@ def init_db() -> None:
             
 
         )
+        _migrate_children_for_unlink(conn)
         conn.commit()
-

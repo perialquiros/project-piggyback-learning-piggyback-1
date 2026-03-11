@@ -656,13 +656,21 @@ async function handleCreateExpert(event) {
     async function handleRemoveExpert(row) {
         const expertId = row.dataset.expertId;
         if (!confirm(`Permanently remove expert "${expertId}"? This cannot be undone.`)) return;
-        const resp = await fetch(`/api/admin/experts/${encodeURIComponent(expertId)}`, { method: 'DELETE' });
-        const data = await resp.json();
-        if (data.success) {
-            adminExperts = adminExperts.filter(e => e.expert_id !== expertId);
-            renderExpertTable();
-        } else {
-            alert('Failed to remove expert.');
+        try {
+            const resp = await fetch(`/api/admin/experts/${encodeURIComponent(expertId)}`, { method: 'DELETE' });
+            const data = await resp.json().catch(() => ({}));
+            if (!resp.ok || !data.success) {
+                throw new Error(data.detail || data.message || 'Failed to remove expert.');
+            }
+
+            // Reload from backend so experts table, assignment table, and child expert dropdowns stay in sync.
+            await loadExpertDashboard(false);
+            if (childrenDashboardLoaded) {
+                await loadChildrenDashboard(false);
+            }
+            setAdminPanelStatus('expert-admin-status', `Expert "${expertId}" deleted.`, 'success');
+        } catch (error) {
+            setAdminPanelStatus('expert-admin-status', error.message || 'Failed to remove expert.', 'error');
         }
     }
     async function handleAddAssignment(row) {
@@ -796,7 +804,7 @@ function renderChildrenTable() {
     tbody.innerHTML = adminChildren.map((child) => `
         <tr data-child-id="${child.child_id}" data-active="${child.is_active ? '1' : '0'}">
             <td><span class="child-id-badge">${child.child_id}</span></td>
-            <td>${escapeHtml(child.expert_name || child.expert_id)}</td>
+            <td>${escapeHtml(child.expert_name || child.expert_id || 'Unlinked')}</td>
             <td><input type="text" data-role="child-first-name" value="${escapeHtml(child.first_name || '')}" /></td>
             <td><input type="text" data-role="child-last-name" value="${escapeHtml(child.last_name || '')}" /></td>
             <td>
@@ -811,6 +819,9 @@ function renderChildrenTable() {
             <td>${child.is_active ? 'Active' : 'Inactive'}</td>
             <td>
                 <button type="button" class="btn btn-outline" data-action="save-child">Save</button>
+                <button type="button" class="btn btn-outline" data-action="unlink-child" ${child.expert_id ? '' : 'disabled'}>
+                    Unlink
+                </button>
                 <button type="button" class="btn ${child.is_active ? '' : 'btn-success'}" data-action="toggle-child">
                     ${child.is_active ? 'Deactivate' : 'Activate'}
                 </button>
@@ -829,6 +840,13 @@ function renderChildrenTable() {
         btn.addEventListener('click', async (event) => {
             const row = event.currentTarget.closest('tr');
             await handleToggleChild(row);
+        });
+    });
+
+    tbody.querySelectorAll('[data-action="unlink-child"]').forEach((btn) => {
+        btn.addEventListener('click', async (event) => {
+            const row = event.currentTarget.closest('tr');
+            await handleUnlinkChild(row);
         });
     });
 }
@@ -916,6 +934,25 @@ async function handleToggleChild(row) {
         await loadChildrenDashboard(false);
     } catch (error) {
         setAdminPanelStatus('child-admin-status', error.message || 'Failed to toggle child', 'error');
+    }
+}
+
+async function handleUnlinkChild(row) {
+    const childId = row?.dataset?.childId;
+    if (!childId) return;
+    if (!confirm(`Unlink child ${childId} from expert?`)) return;
+    try {
+        const res = await fetch(`/api/admin/children/${encodeURIComponent(childId)}/unlink`, {
+            method: 'POST',
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.detail || data.message || 'Failed to unlink child');
+        }
+        setAdminPanelStatus('child-admin-status', `Child ${childId} unlinked.`, 'success');
+        await loadChildrenDashboard(false);
+    } catch (error) {
+        setAdminPanelStatus('child-admin-status', error.message || 'Failed to unlink child', 'error');
     }
 }
         async function downloadVideo(url) {

@@ -88,7 +88,7 @@ def get_child(child_id: str, include_inactive: bool = True) -> Optional[Dict[str
         SELECT c.child_id, c.expert_id, c.first_name, c.last_name, c.icon_key,
                c.is_active, c.created_at, c.updated_at, e.display_name AS expert_name
         FROM children c
-        JOIN experts e ON e.expert_id = c.expert_id
+        LEFT JOIN experts e ON e.expert_id = c.expert_id
         WHERE c.child_id = ?
     """
     params: List[Any] = [child_id]
@@ -131,9 +131,9 @@ def list_children(
             SELECT c.child_id, c.expert_id, c.first_name, c.last_name, c.icon_key,
                    c.is_active, c.created_at, c.updated_at, e.display_name AS expert_name
             FROM children c
-            JOIN experts e ON e.expert_id = c.expert_id
+            LEFT JOIN experts e ON e.expert_id = c.expert_id
             {where_sql}
-            ORDER BY lower(c.expert_id), lower(c.last_name), lower(c.first_name), c.child_id
+            ORDER BY lower(COALESCE(c.expert_id, '')), lower(c.last_name), lower(c.first_name), c.child_id
             """,
             tuple(values),
         ).fetchall()
@@ -194,6 +194,7 @@ def create_child(
 
 def update_child(
     child_id: str,
+    expert_id: Optional[str] = None,
     first_name: Optional[str] = None,
     last_name: Optional[str] = None,
     icon_key: Optional[str] = None,
@@ -205,6 +206,17 @@ def update_child(
 
     updates: List[str] = []
     values: List[Any] = []
+
+    if expert_id is not None:
+        normalized_expert_id = normalize_expert_id(expert_id)
+        if normalized_expert_id:
+            _ensure_expert_exists(normalized_expert_id)
+            updates.append("expert_id = ?")
+            values.append(normalized_expert_id)
+        else:
+            # empty value means unlink child from expert
+            updates.append("expert_id = ?")
+            values.append(None)
 
     if first_name is not None:
         cleaned_first = normalize_name(first_name)

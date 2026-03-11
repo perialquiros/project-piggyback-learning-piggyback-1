@@ -180,9 +180,21 @@ async def learner_list_videos_for_child(child_id: str):
             status_code=404,
         )
 
+    expert_id = (child.get("expert_id") or "").strip()
+    if not expert_id:
+        return JSONResponse(
+            {
+                "success": True,
+                "child": child,
+                "videos": [],
+                "count": 0,
+                "message": "Child is not linked to an expert",
+            }
+        )
+
     assigned_video_ids = {
         (video_id or "").strip().lower()
-        for video_id in list_video_ids_for_expert(child["expert_id"])
+        for video_id in list_video_ids_for_expert(expert_id)
         if (video_id or "").strip()
     }
 

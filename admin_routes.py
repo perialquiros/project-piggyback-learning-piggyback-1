@@ -2,6 +2,7 @@
 import json
 import csv
 import asyncio
+import sqlite3
 from typing import Any, Dict, List, Optional
 from app.services.frame_service import (
     extract_frames_per_second_for_video as extract_frames_per_second_for_video_service,
@@ -329,7 +330,13 @@ async def api_admin_deactivate_expert(expert_id: str):
 #delete
 @router_admin_api.delete("/admin/experts/{expert_id}")
 async def api_admin_delete_expert(expert_id: str):
-    deleted = delete_expert(expert_id)
+    try:
+        deleted = delete_expert(expert_id)
+    except sqlite3.IntegrityError:
+        raise HTTPException(
+            status_code=409,
+            detail="cannot delete expert while children are linked; reassign or deactivate children first",
+        )
     if not deleted:
         raise HTTPException(status_code=404, detail="expert not found")
     return {"success": True}
@@ -509,11 +516,14 @@ async def api_admin_create_child(payload: Dict[str, Any] = Body(...)):
 
 @router_admin_api.put("/admin/children/{child_id}")
 async def api_admin_update_child(child_id: str, payload: Dict[str, Any] = Body(...)):
+    expert_id = payload.get("expert_id")
     first_name = payload.get("first_name")
     last_name = payload.get("last_name")
     icon_key = payload.get("icon_key")
     is_active = payload.get("is_active")
 
+    if expert_id is not None:
+        expert_id = str(expert_id)
     if first_name is not None:
         first_name = str(first_name)
     if last_name is not None:
@@ -526,6 +536,7 @@ async def api_admin_update_child(child_id: str, payload: Dict[str, Any] = Body(.
     try:
         child = update_child(
             child_id=child_id,
+            expert_id=expert_id,
             first_name=first_name,
             last_name=last_name,
             icon_key=icon_key,
@@ -538,6 +549,14 @@ async def api_admin_update_child(child_id: str, payload: Dict[str, Any] = Body(.
             raise HTTPException(status_code=409, detail="duplicate child profile for this expert")
         raise HTTPException(status_code=500, detail=str(exc))
 
+    if not child:
+        raise HTTPException(status_code=404, detail="child not found")
+    return {"success": True, "child": child}
+
+
+@router_admin_api.post("/admin/children/{child_id}/unlink")
+async def api_admin_unlink_child(child_id: str):
+    child = update_child(child_id=child_id, expert_id="")
     if not child:
         raise HTTPException(status_code=404, detail="child not found")
     return {"success": True, "child": child}
