@@ -801,10 +801,24 @@ function renderChildrenTable() {
         return;
     }
 
+    const expertLinkOptions = (adminExperts || []).map((expert) => `
+        <option value="${expert.expert_id}">
+            ${escapeHtml(expert.display_name || expert.expert_id)} (${expert.expert_id})${expert.is_active ? '' : ' [inactive]'}
+        </option>
+    `).join('');
+
     tbody.innerHTML = adminChildren.map((child) => `
         <tr data-child-id="${child.child_id}" data-active="${child.is_active ? '1' : '0'}">
             <td><span class="child-id-badge">${child.child_id}</span></td>
-            <td>${escapeHtml(child.expert_name || child.expert_id || 'Unlinked')}</td>
+            <td>
+                ${child.expert_id
+                    ? escapeHtml(child.expert_name || child.expert_id)
+                    : `<select data-role="child-link-expert">
+                        <option value="">Select expert...</option>
+                        ${expertLinkOptions}
+                    </select>`
+                }
+            </td>
             <td><input type="text" data-role="child-first-name" value="${escapeHtml(child.first_name || '')}" /></td>
             <td><input type="text" data-role="child-last-name" value="${escapeHtml(child.last_name || '')}" /></td>
             <td>
@@ -819,9 +833,10 @@ function renderChildrenTable() {
             <td>${child.is_active ? 'Active' : 'Inactive'}</td>
             <td>
                 <button type="button" class="btn btn-outline" data-action="save-child">Save</button>
-                <button type="button" class="btn btn-outline" data-action="unlink-child" ${child.expert_id ? '' : 'disabled'}>
-                    Unlink
-                </button>
+                ${child.expert_id
+                    ? '<button type="button" class="btn btn-outline" data-action="unlink-child">Unlink</button>'
+                    : '<button type="button" class="btn btn-outline" data-action="link-child">Link</button>'
+                }
                 <button type="button" class="btn ${child.is_active ? '' : 'btn-success'}" data-action="toggle-child">
                     ${child.is_active ? 'Deactivate' : 'Activate'}
                 </button>
@@ -849,6 +864,40 @@ function renderChildrenTable() {
             await handleUnlinkChild(row);
         });
     });
+
+    tbody.querySelectorAll('[data-action="link-child"]').forEach((btn) => {
+        btn.addEventListener('click', async (event) => {
+            const row = event.currentTarget.closest('tr');
+            await handleLinkChild(row);
+        });
+    });
+}
+
+function childMatchesCurrentFilters(child) {
+    const filterExpert = (document.getElementById('children-filter-expert')?.value || '').trim().toLowerCase();
+    const includeInactive = Boolean(document.getElementById('children-include-inactive')?.checked);
+    const childExpert = String(child?.expert_id || '').trim().toLowerCase();
+
+    if (filterExpert && childExpert !== filterExpert) {
+        return false;
+    }
+    if (!includeInactive && !child?.is_active) {
+        return false;
+    }
+    return true;
+}
+
+function applyUpdatedChildToUi(updatedChild) {
+    if (!updatedChild || !updatedChild.child_id) return;
+    const index = adminChildren.findIndex((item) => item.child_id === updatedChild.child_id);
+    if (index === -1) return;
+
+    if (childMatchesCurrentFilters(updatedChild)) {
+        adminChildren[index] = updatedChild;
+    } else {
+        adminChildren.splice(index, 1);
+    }
+    renderChildrenTable();
 }
 
 async function handleCreateChild(event) {
@@ -887,6 +936,13 @@ async function handleSaveChild(row) {
             icon_key: (row.querySelector('[data-role="child-icon-key"]')?.value || '').trim().toLowerCase(),
             is_active: row.dataset.active === '1',
         };
+        const linkSelect = row.querySelector('[data-role="child-link-expert"]');
+        if (linkSelect) {
+            const selectedExpert = (linkSelect.value || '').trim();
+            if (selectedExpert) {
+                payload.expert_id = selectedExpert;
+            }
+        }
 
         const res = await fetch(`/api/admin/children/${encodeURIComponent(childId)}`, {
             method: 'PUT',
@@ -899,7 +955,11 @@ async function handleSaveChild(row) {
         }
 
         setAdminPanelStatus('child-admin-status', `Updated child ${childId}.`, 'success');
-        await loadChildrenDashboard(false);
+        if (data.child) {
+            applyUpdatedChildToUi(data.child);
+        } else {
+            await loadChildrenDashboard(false);
+        }
     } catch (error) {
         setAdminPanelStatus('child-admin-status', error.message || 'Failed to update child', 'error');
     }
@@ -931,7 +991,11 @@ async function handleToggleChild(row) {
             isActive ? `Deactivated child ${childId}.` : `Activated child ${childId}.`,
             'success'
         );
-        await loadChildrenDashboard(false);
+        if (data.child) {
+            applyUpdatedChildToUi(data.child);
+        } else {
+            await loadChildrenDashboard(false);
+        }
     } catch (error) {
         setAdminPanelStatus('child-admin-status', error.message || 'Failed to toggle child', 'error');
     }
@@ -950,9 +1014,42 @@ async function handleUnlinkChild(row) {
             throw new Error(data.detail || data.message || 'Failed to unlink child');
         }
         setAdminPanelStatus('child-admin-status', `Child ${childId} unlinked.`, 'success');
-        await loadChildrenDashboard(false);
+        if (data.child) {
+            applyUpdatedChildToUi(data.child);
+        } else {
+            await loadChildrenDashboard(false);
+        }
     } catch (error) {
         setAdminPanelStatus('child-admin-status', error.message || 'Failed to unlink child', 'error');
+    }
+}
+
+async function handleLinkChild(row) {
+    const childId = row?.dataset?.childId;
+    if (!childId) return;
+    const expertId = (row.querySelector('[data-role="child-link-expert"]')?.value || '').trim();
+    if (!expertId) {
+        setAdminPanelStatus('child-admin-status', 'Pick an expert first.', 'error');
+        return;
+    }
+    try {
+        const res = await fetch(`/api/admin/children/${encodeURIComponent(childId)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ expert_id: expertId }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.detail || data.message || 'Failed to link child');
+        }
+        setAdminPanelStatus('child-admin-status', `Child ${childId} linked to ${expertId}.`, 'success');
+        if (data.child) {
+            applyUpdatedChildToUi(data.child);
+        } else {
+            await loadChildrenDashboard(false);
+        }
+    } catch (error) {
+        setAdminPanelStatus('child-admin-status', error.message || 'Failed to link child', 'error');
     }
 }
         async function downloadVideo(url) {
