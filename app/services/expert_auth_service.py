@@ -321,22 +321,69 @@ def list_video_assignments() -> List[Dict[str, Any]]:
 
     return [dict(row) for row in rows]
 
+def list_video_ids_for_expert(expert_id: str) -> List[str]:
+    expert_id = normalize_expert_id(expert_id)
+    if not expert_id:
+        return []
+
+    with get_conn() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT video_id
+            FROM video_expert_assignments
+            WHERE lower(trim(expert_id)) = ?
+            ORDER BY video_id ASC
+            """,
+            (expert_id,),
+        ).fetchall()
+
+    return [str(row["video_id"]) for row in rows]
+
 def can_expert_access_video(expert_id: str, video_id: str) -> bool:
     # Pair-based check — True if this expert has any assignment row for this video.
     expert_id = normalize_expert_id(expert_id)
-    video_id = (video_id or "").strip()
+    video_id = (video_id or "").strip().lower()
     if not expert_id or not video_id:
         return False
 
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT 1 FROM video_expert_assignments WHERE video_id = ? AND expert_id = ?",
+            """
+            SELECT 1
+            FROM video_expert_assignments
+            WHERE lower(trim(video_id)) = ? AND lower(trim(expert_id)) = ?
+            """,
             (video_id, expert_id),
         ).fetchone()
 
     return row is not None
     
 def claim_video_for_expert(expert_id: str, video_id: str) -> None:
-    # Idempotent — just adds the pair. Never blocks other experts on same video.
+    # Assigned-only mode: confirm existing assignment, do not create new access.
     expert_id = normalize_expert_id(expert_id)
-    add_video_assignment(video_id, expert_id, source="expert_claim")
+    normalized_video_id = (video_id or "").strip().lower()
+    if not expert_id or not normalized_video_id:
+        raise ValueError("expert_id and video_id are required")
+
+    now = utc_now_iso()
+    with get_conn() as conn:
+        existing = conn.execute(
+            """
+            SELECT 1
+            FROM video_expert_assignments
+            WHERE lower(trim(video_id)) = ? AND lower(trim(expert_id)) = ?
+            """,
+            (normalized_video_id, expert_id),
+        ).fetchone()
+        if not existing:
+            raise RuntimeError("assignment_not_found")
+
+        conn.execute(
+            """
+            UPDATE video_expert_assignments
+            SET updated_at = ?
+            WHERE lower(trim(video_id)) = ? AND lower(trim(expert_id)) = ?
+            """,
+            (now, normalized_video_id, expert_id),
+        )
+        conn.commit()

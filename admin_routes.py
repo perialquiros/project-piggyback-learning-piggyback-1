@@ -15,6 +15,14 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
+
+from app.services.children_service import(
+    ALLOWED_CHILD_ICON_KEYS,
+    create_child,
+    list_children,
+    update_child,
+    deactivate_child,
+)
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 #Pulls shared path from settings.py so all module uses the same directory
@@ -454,6 +462,93 @@ async def submit_questions(payload: Dict[str, Any] = Body(...)):
         "file_url": f"/downloads/{video_id}/questions/{out_path.name}",
         "file_path": str(out_path),
     }
+
+#learner should only see video inherited from selected child's expert
+
+@router_admin_api.get("/admin/children")
+def api_admin_list_children(
+    expert_id: Optional[str] = None,
+    include_inactive: bool = False,
+):
+    try:
+        children = list_children(expert_id=expert_id, include_inactive=include_inactive)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    return {
+        "success": True,
+        "children": children,
+        "experts": list_experts(),  # for dropdown in admin UI
+        "icon_keys": list(ALLOWED_CHILD_ICON_KEYS),
+        "count": len(children),
+    }
+
+
+@router_admin_api.post("/admin/children")
+async def api_admin_create_child(payload: Dict[str, Any] = Body(...)):
+    expert_id = str(payload.get("expert_id") or "").strip()
+    first_name = str(payload.get("first_name") or "").strip()
+    last_name = str(payload.get("last_name") or "").strip()
+    icon_key = str(payload.get("icon_key") or "").strip().lower()
+
+    try:
+        child = create_child(
+            expert_id=expert_id,
+            first_name=first_name,
+            last_name=last_name,
+            icon_key=icon_key,
+        )
+        return {"success": True, "child": child}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        if str(exc) == "duplicate_child_profile":
+            raise HTTPException(status_code=409, detail="duplicate child profile for this expert")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router_admin_api.put("/admin/children/{child_id}")
+async def api_admin_update_child(child_id: str, payload: Dict[str, Any] = Body(...)):
+    first_name = payload.get("first_name")
+    last_name = payload.get("last_name")
+    icon_key = payload.get("icon_key")
+    is_active = payload.get("is_active")
+
+    if first_name is not None:
+        first_name = str(first_name)
+    if last_name is not None:
+        last_name = str(last_name)
+    if icon_key is not None:
+        icon_key = str(icon_key)
+    if is_active is not None and not isinstance(is_active, bool):
+        raise HTTPException(status_code=400, detail="is_active must be true or false")
+
+    try:
+        child = update_child(
+            child_id=child_id,
+            first_name=first_name,
+            last_name=last_name,
+            icon_key=icon_key,
+            is_active=is_active,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except RuntimeError as exc:
+        if str(exc) == "duplicate_child_profile":
+            raise HTTPException(status_code=409, detail="duplicate child profile for this expert")
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    if not child:
+        raise HTTPException(status_code=404, detail="child not found")
+    return {"success": True, "child": child}
+
+
+@router_admin_api.post("/admin/children/{child_id}/deactivate")
+async def api_admin_deactivate_child(child_id: str):
+    child = deactivate_child(child_id)
+    if not child:
+        raise HTTPException(status_code=404, detail="child not found")
+    return {"success": True, "child": child}
 
 
 # =========================================================
