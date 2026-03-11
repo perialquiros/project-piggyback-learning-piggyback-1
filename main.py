@@ -13,8 +13,12 @@ from app.services.expert_auth_service import (
     ensure_video_assignment_rows,
     list_experts_for_video,
     list_video_assignments,
+    get_expert,
+    list_video_ids_for_expert,
+    normalize_expert_id,
 )
-
+from app.services.children_service import get_child, list_children
+from video_quiz_routes import router_video_quiz, router_api, refresh_kids_videos_json
 from fastapi import (
     FastAPI,
     Form,
@@ -40,7 +44,6 @@ from app.web import templates
 
 
 
-from video_quiz_routes import router_video_quiz, router_api
 from admin_routes import router_admin_pages, router_admin_api, router_admin_ws
 from app.settings import (
     ADMIN_PASSWORD,
@@ -87,21 +90,15 @@ def require_expert_session(request: Request) -> Dict[str,str]:
 def require_expert_video_access(
     request: Request, video_id: str, auto_claim: bool = False
 ) -> Dict[str, str]:
+    #keep one gate for all expert-protected route
     expert_identity = require_expert_session(request)
     normalized_video_id = (video_id or "").strip()
 
     if not normalized_video_id:
         raise HTTPException(status_code=400, detail="video_id is required")
-
+    #Assigned-only policy : no auto-claim access path
     if can_expert_access_video(expert_identity["expert_id"], normalized_video_id):
         return expert_identity
-
-    if auto_claim:
-        try:
-            claim_video_for_expert(expert_identity["expert_id"], normalized_video_id)
-            return expert_identity
-        except Exception:
-            pass
 
     raise HTTPException(status_code=403, detail="Forbidden")
 
@@ -141,6 +138,80 @@ def home_redirect(request: Request):
 def children_page(request: Request):
     """Children's learning interface - no password required"""
     return templates.TemplateResponse("children.html", {"request": request})
+
+@app.get("/api/learners/experts/{expert_id}/children")
+async def learner_list_children_for_expert(expert_id: str):
+    # Learner starts by entering expert ID; return active child profiles.
+    normalized_expert_id = normalize_expert_id(expert_id)
+    if not normalized_expert_id:
+        return JSONResponse(
+            {"success": False, "message": "expert_id is required", "children": []},
+            status_code=400,
+        )
+
+    expert = get_expert(normalized_expert_id)
+    if not expert or not bool(expert.get("is_active")):
+        return JSONResponse(
+            {"success": False, "message": "Expert not found", "children": []},
+            status_code=404,
+        )
+
+    children = list_children(expert_id=normalized_expert_id, include_inactive=False)
+    return JSONResponse(
+        {
+            "success": True,
+            "expert": {
+                "expert_id": expert["expert_id"],
+                "display_name": expert.get("display_name") or expert["expert_id"],
+            },
+            "children": children,
+            "count": len(children),
+        }
+    )
+
+
+@app.get("/api/learners/children/{child_id}/videos")
+async def learner_list_videos_for_child(child_id: str):
+    # Child inherits expert video permissions (no child-video table in this phase).
+    child = get_child(child_id, include_inactive=False)
+    if not child:
+        return JSONResponse(
+            {"success": False, "message": "Child not found", "videos": []},
+            status_code=404,
+        )
+
+    expert_id = (child.get("expert_id") or "").strip()
+    if not expert_id:
+        return JSONResponse(
+            {
+                "success": True,
+                "child": child,
+                "videos": [],
+                "count": 0,
+                "message": "Child is not linked to an expert",
+            }
+        )
+
+    assigned_video_ids = {
+        (video_id or "").strip().lower()
+        for video_id in list_video_ids_for_expert(expert_id)
+        if (video_id or "").strip()
+    }
+
+    if not assigned_video_ids:
+        return JSONResponse({"success": True, "child": child, "videos": [], "count": 0})
+
+    all_videos = refresh_kids_videos_json()
+    scoped_videos = [
+        video
+        for video in all_videos
+        if str(video.get("video_id") or "").strip().lower() in assigned_video_ids
+    ]
+
+    return JSONResponse(
+        {"success": True, "child": child, "videos": scoped_videos, "count": len(scoped_videos)}
+    )
+
 
 #Route: Handles expert login requests from the frontend
 @app.post("/api/expert/login")
@@ -314,7 +385,7 @@ async def save_expert_question(request: Request, payload: Dict[str, Any] = Body(
         return JSONResponse({"success": False, "message": "Video not found"}, status_code=404)
 
     try:
-        require_expert_video_access(request, video_id, auto_claim=True)
+        require_expert_video_access(request, video_id, auto_claim=False)
     except HTTPException as exc:
         return JSONResponse(
             {"success": False, "message": exc.detail}, status_code=exc.status_code
@@ -334,7 +405,7 @@ async def save_final_questions(request: Request, payload: Dict[str, Any] = Body(
         return JSONResponse({"success": False, "message": "Video not found"}, status_code=404)
 
     try:
-        require_expert_video_access(request, video_id, auto_claim=True)
+        require_expert_video_access(request, video_id, auto_claim=False)
     except HTTPException as exc:
         return JSONResponse(
             {"success": False, "message": exc.detail}, status_code=exc.status_code
@@ -395,12 +466,15 @@ async def list_expert_videos(request: Request):
                 "questionCount": len(question_files),
             }
         )
-    expert_id = expert_identity["expert_id"]
+    expert_id_norm = (expert_identity["expert_id"] or "").strip().lower()
     filtered: List[Dict[str, Any]] = []
     for video in videos:
         #get all experts assigned to this video from the new many -to - many table
         assigned_experts = list_experts_for_video(video["id"])
-        assigned_to_me = any(e["expert_id"] == expert_id for e in assigned_experts)
+        assigned_to_me = any(
+            str(e.get("expert_id") or "").strip().lower() == expert_id_norm
+            for e in assigned_experts
+        )
         if assigned_to_me:
             filtered.append(
                 {
@@ -430,6 +504,13 @@ async def claim_expert_video(request: Request, video_id: str):
 
     try:
         claim_video_for_expert(expert_identity["expert_id"], normalized_video_id)
+    except RuntimeError as exc:
+        if str(exc) == "assignment_not_found":
+            return JSONResponse(
+                {"success": False, "message": "Video is not assigned to this expert"},
+                status_code=403,
+            )
+        return JSONResponse({"success": False, "message": str(exc)}, status_code=400)
     except Exception as exc:
         return JSONResponse({"success": False, "message": str(exc)}, status_code=400)
 
