@@ -221,8 +221,12 @@ def get_final_questions(video_id: str):
         if not ai_qs:
             continue
 
-        # Sort by llm_ranking (lowest = best)
-        sorted_qs = sorted(ai_qs, key=_llm_sort_key)
+        # Sort by expert_ranking first, fall back to llm_ranking
+        sorted_qs = sorted(ai_qs, key=lambda q: (
+            _llm_sort_key({"llm_ranking": q.get("expert_ranking")}),
+            _llm_sort_key(q)
+        ))
+
 
         # Find first non-trashed question
         chosen_q = next((q for q in sorted_qs if not q.get("trashed", False)), None)

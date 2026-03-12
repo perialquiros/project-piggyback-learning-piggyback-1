@@ -69,6 +69,26 @@ async function loadQuestions() {
     }
 }
 
+// ── Pick which question index wins for a segment (same logic as the server) ───
+// Server sorts by expert_ranking asc (null→999), then llm_ranking asc (null→999),
+// then picks the first non-trashed one.
+function winnerIndex(questions) {
+    const key = q => {
+        const er = (q.expert_ranking != null && q.expert_ranking !== 0) ? Number(q.expert_ranking) : 999;
+        const lr = (q.llm_ranking  != null) ? Number(q.llm_ranking)  : 999;
+        return [er, lr];
+    };
+    const sorted = questions
+        .map((q, i) => ({ q, i }))
+        .filter(({ q }) => !q.trashed)
+        .sort((a, b) => {
+            const [aer, alr] = key(a.q);
+            const [ber, blr] = key(b.q);
+            return aer !== ber ? aer - ber : alr - blr;
+        });
+    return sorted.length ? sorted[0].i : -1;
+}
+
 // ── Render all segments into cards ───────────────────────────────────────────
 function renderSegments() {
     const container = document.getElementById('segmentsContainer');
@@ -81,8 +101,9 @@ function renderSegments() {
         const questions = (seg.aiQuestions || []);
         const start = formatTime(seg.start);
         const end = formatTime(seg.end);
+        const winner = winnerIndex(questions);  // which question kids will see
         const questionsHtml = questions.length
-            ? questions.map((q, qi) => questionCard(si, qi, q)).join('')
+            ? questions.map((q, qi) => questionCard(si, qi, q, qi === winner)).join('')
             : '<p style="color:#9ca3af;font-size:.9rem">No questions in this segment.</p>';
 
         return `
@@ -94,22 +115,29 @@ function renderSegments() {
 }
 
 // ── Single question card HTML ────────────────────────────────────────────────
-function questionCard(si, qi, q) {
+function questionCard(si, qi, q, isWinner) {
     const typeLabel = (q.type || 'question').replace(/_/g, ' ');
-    const trashed = q.trashed ? 'style="opacity:.45"' : '';
+    const dimmed = q.trashed ? 'style="opacity:.45"' : '';
+    // Gold border + label for the question kids will actually see
+    const winnerStyle = isWinner
+        ? 'border:2px solid #f59e0b;border-radius:8px;padding:10px;margin-bottom:4px;background:#fffbeb'
+        : '';
     return `
-    <div ${trashed}>
-        <span class="type-badge">${typeLabel}</span>
-        ${q.trashed ? '<span style="color:#ef4444;font-size:.8rem;margin-left:6px">⚠ trashed</span>' : ''}
-        <div class="field-group">
-            <label>Question</label>
-            <textarea id="q_${si}_${qi}" onchange="syncToData(${si},${qi},'question',this.value)">${escHtml(q.question || q.q || '')}</textarea>
+    <div ${dimmed}>
+        <div style="${winnerStyle}">
+            <span class="type-badge">${typeLabel}</span>
+            ${isWinner ? '<span style="color:#d97706;font-weight:700;font-size:.8rem;margin-left:8px">⭐ Kids will see this one</span>' : ''}
+            ${q.trashed ? '<span style="color:#ef4444;font-size:.8rem;margin-left:6px">⚠ trashed</span>' : ''}
+            <div class="field-group" style="margin-top:8px">
+                <label>Question</label>
+                <textarea id="q_${si}_${qi}" onchange="syncToData(${si},${qi},'question',this.value)">${escHtml(q.question || q.q || '')}</textarea>
+            </div>
+            <div class="field-group">
+                <label>Answer</label>
+                <textarea id="a_${si}_${qi}" rows="2" onchange="syncToData(${si},${qi},'answer',this.value)">${escHtml(q.answer || q.a || '')}</textarea>
+            </div>
+            <button class="regen-btn" id="regen_${si}_${qi}" onclick="regenerate(${si},${qi})">🔄 Regenerate with AI</button>
         </div>
-        <div class="field-group">
-            <label>Answer</label>
-            <textarea id="a_${si}_${qi}" rows="2" onchange="syncToData(${si},${qi},'answer',this.value)">${escHtml(q.answer || q.a || '')}</textarea>
-        </div>
-        <button class="regen-btn" id="regen_${si}_${qi}" onclick="regenerate(${si},${qi})">🔄 Regenerate with AI</button>
     </div>
     <hr style="border:none;border-top:1px solid #f3f4f6;margin:14px 0">`;
 }
