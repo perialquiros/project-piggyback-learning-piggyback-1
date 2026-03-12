@@ -488,6 +488,10 @@ def simplify_item(item: str) -> str:
 
 
 def extract_items(expected_raw: str) -> list[str]:
+    # Only treat as a list if there's a comma, or "and" appears after a comma
+    # (e.g. "red, blue, and green"). Bare "and" without a comma is part of a phrase.
+    if "," not in expected_raw:
+        return []
     parts = [
         p
         for p in re.split(r",|\sand\s", expected_raw, flags=re.IGNORECASE)
