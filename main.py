@@ -36,6 +36,7 @@ from app.services.expert_review_service import (
     save_expert_question_payload,
     save_final_questions_payload,
 )
+from app.services.question_generation_service import generate_persona_variants
 #Stores expert login session in single cookie
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -616,6 +617,23 @@ async def claim_expert_video(request: Request, video_id: str):
         return JSONResponse({"success": False, "message": str(exc)}, status_code=400)
 
     return JSONResponse({"success": True})
+
+
+@app.post("/api/expert/questions/persona-variants")
+async def get_persona_variants(request: Request, payload: Dict[str, Any] = Body(...)):
+    """Rephrase AI-generated questions into Bunny, Alligator, and Pig personas."""
+    try:
+        require_expert_session(request)
+    except HTTPException as exc:
+        return JSONResponse({"success": False, "message": exc.detail}, status_code=exc.status_code)
+
+    questions = payload.get("questions")
+    if not isinstance(questions, dict) or not questions:
+        return JSONResponse({"success": False, "message": "questions dict is required"}, status_code=400)
+
+    best_question = payload.get("best_question")
+    result = await asyncio.to_thread(generate_persona_variants, questions, best_question)
+    return JSONResponse(result)
 
 
 @app.post("/api/tts")
