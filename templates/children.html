@@ -150,7 +150,7 @@ function updateScoreDisplay() {
     document.getElementById('totalScore').textContent = `${quizScore.correct}/${quizScore.total}`;
 }
 
-function recordAnswer(question, expectedAnswer, userAnswer, status, similarity) {
+function recordAnswer(question, expectedAnswer, userAnswer, status, similarity, questionType) {
     if (status === 'correct') {
         quizScore.correct++;
     } else {
@@ -163,6 +163,7 @@ function recordAnswer(question, expectedAnswer, userAnswer, status, similarity) 
         userAnswer: userAnswer,
         status: status,
         similarity: similarity,
+        question_type: questionType || null,
         timestamp: new Date().toISOString()
     });
     updateScoreDisplay();

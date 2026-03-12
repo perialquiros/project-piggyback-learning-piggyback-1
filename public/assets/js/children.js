@@ -1331,9 +1331,9 @@
       }
     }
 
-    function tryRecordAnswer(question, answer, spoken, status, sim) {
+    function tryRecordAnswer(question, answer, spoken, status, sim, questionType) {
       if (typeof recordAnswer === "function") {
-        recordAnswer(question, answer, spoken, status, sim);
+        recordAnswer(question, answer, spoken, status, sim, questionType);
       }
     }
 
@@ -1783,7 +1783,7 @@
 
           correctAnswers++;
           updateProgress();
-          tryRecordAnswer(q.question, q.answer, spoken, "correct", sim);
+          tryRecordAnswer(q.question, q.answer, spoken, "correct", sim, q.question_type);
 
           await deliverFeedback({
             message: celebrationMessage,
@@ -1810,7 +1810,7 @@
             minVisibleMs: MIN_FEEDBACK_DISPLAY_MS
           });
 
-          tryRecordAnswer(q.question, q.answer, spoken, "almost", sim);
+          tryRecordAnswer(q.question, q.answer, spoken, "almost", sim, q.question_type);
 
           setPlayerTime(rewindTo);
           await wait(200);
@@ -1824,7 +1824,7 @@
           minVisibleMs: MIN_FEEDBACK_DISPLAY_MS
         });
 
-        tryRecordAnswer(q.question, q.answer, spoken, "wrong", sim);
+        tryRecordAnswer(q.question, q.answer, spoken, "wrong", sim, q.question_type);
 
         setPlayerTime(rewindTo);
         await wait(200);

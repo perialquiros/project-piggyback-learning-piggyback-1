@@ -238,6 +238,7 @@ def get_final_questions(video_id: str):
                 "segment_range_end": seg.get("end"),
                 "question": question_text,
                 "answer": answer_text,
+                "question_type": chosen_q.get("type"),
                 "llm_ranking": chosen_q.get("llm_ranking"),
                 "expert_ranking": chosen_q.get("expert_ranking"),
             })
