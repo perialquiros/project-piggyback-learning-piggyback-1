@@ -390,6 +390,12 @@
                             <span>Files: ${fileCount}</span>
                             <span>${questionText}</span>
                         </div>
+                        <!-- Link to re-edit finalized questions for this video -->
+                        <a href="/expert/edit/${video.id}"
+                           onclick="event.stopPropagation()"
+                           style="display:inline-block;margin-top:6px;font-size:.8rem;color:#2563eb;text-decoration:none;background:#eff6ff;border:1px solid #bfdbfe;padding:3px 10px;border-radius:4px">
+                           ✏ Change Questions
+                        </a>
                     </div>
                 `;
 
@@ -3058,8 +3064,10 @@
             // Add save button
             const saveSection = document.createElement('div');
             saveSection.style.textAlign = 'center';
+            // Show finalize button + link to re-edit page (visible after finalization)
             saveSection.innerHTML = `
                 <button class="btn-save-changes" onclick="saveAllLLMEdits()">Finalize questions and submit</button>
+                <a href="/expert/edit/${currentVideoId}" style="display:inline-block;margin-left:16px;font-size:.9rem;color:#2563eb">Edit finalized questions →</a>
             `;
             reviewList.appendChild(saveSection);
         }
