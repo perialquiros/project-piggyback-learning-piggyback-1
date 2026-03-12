@@ -69,24 +69,37 @@ async function loadQuestions() {
     }
 }
 
-// ── Pick which question index wins for a segment (same logic as the server) ───
-// Server sorts by expert_ranking asc (null→999), then llm_ranking asc (null→999),
-// then picks the first non-trashed one.
+// ── Pick which question index wins for a segment ─────────────────────────────
+// Mirrors the server: lowest expert_ranking wins, ties broken by llm_ranking.
+// Trashed questions are skipped. Returns the index of the winner (-1 if none).
 function winnerIndex(questions) {
-    const key = q => {
-        const er = (q.expert_ranking != null && q.expert_ranking !== 0) ? Number(q.expert_ranking) : 999;
-        const lr = (q.llm_ranking  != null) ? Number(q.llm_ranking)  : 999;
-        return [er, lr];
-    };
-    const sorted = questions
-        .map((q, i) => ({ q, i }))
-        .filter(({ q }) => !q.trashed)
-        .sort((a, b) => {
-            const [aer, alr] = key(a.q);
-            const [ber, blr] = key(b.q);
-            return aer !== ber ? aer - ber : alr - blr;
-        });
-    return sorted.length ? sorted[0].i : -1;
+    let bestIndex = -1;
+    let bestExpertRank = 9999;
+    let bestLlmRank = 9999;
+
+    for (let i = 0; i < questions.length; i++) {
+        const q = questions[i];
+
+        // Skip trashed questions
+        if (q.trashed) continue;
+
+        // Treat missing / zero expert_ranking as a very low priority (9999)
+        const expertRank = (q.expert_ranking && q.expert_ranking !== 0) ? Number(q.expert_ranking) : 9999;
+        const llmRank    = (q.llm_ranking != null) ? Number(q.llm_ranking) : 9999;
+
+        // This question beats the current best if it has a lower expert rank,
+        // or the same expert rank but a lower llm rank
+        const isBetter = expertRank < bestExpertRank ||
+                         (expertRank === bestExpertRank && llmRank < bestLlmRank);
+
+        if (isBetter) {
+            bestIndex = i;
+            bestExpertRank = expertRank;
+            bestLlmRank = llmRank;
+        }
+    }
+
+    return bestIndex;
 }
 
 // ── Render all segments into cards ───────────────────────────────────────────
@@ -121,12 +134,17 @@ function questionCard(si, qi, q, isWinner) {
     // Gold border + label for the question kids will actually see
     const winnerStyle = isWinner
         ? 'border:2px solid #f59e0b;border-radius:8px;padding:10px;margin-bottom:4px;background:#fffbeb'
+        : 'border:1px solid #e5e7eb;border-radius:8px;padding:10px;margin-bottom:4px';
+    // Only show "Set as kids question" button on non-winner, non-trashed questions
+    const setBtn = (!isWinner && !q.trashed)
+        ? `<button onclick="setWinner(${si},${qi})" style="margin-left:8px;background:#fef3c7;border:1px solid #f59e0b;color:#92400e;padding:3px 10px;border-radius:4px;font-size:.8rem;cursor:pointer">Set as kids question</button>`
         : '';
     return `
     <div ${dimmed}>
         <div style="${winnerStyle}">
             <span class="type-badge">${typeLabel}</span>
             ${isWinner ? '<span style="color:#d97706;font-weight:700;font-size:.8rem;margin-left:8px">⭐ Kids will see this one</span>' : ''}
+            ${setBtn}
             ${q.trashed ? '<span style="color:#ef4444;font-size:.8rem;margin-left:6px">⚠ trashed</span>' : ''}
             <div class="field-group" style="margin-top:8px">
                 <label>Question</label>
@@ -140,6 +158,24 @@ function questionCard(si, qi, q, isWinner) {
         </div>
     </div>
     <hr style="border:none;border-top:1px solid #f3f4f6;margin:14px 0">`;
+}
+
+// ── Manually pick which question kids see for a segment ──────────────────────
+// Give the chosen question expert_ranking=1 so it wins the sort.
+// Give all other questions expert_ranking=2 so they lose.
+function setWinner(si, qi) {
+    const questions = segmentsData[si].aiQuestions;
+
+    for (let i = 0; i < questions.length; i++) {
+        if (i === qi) {
+            questions[i].expert_ranking = 1; // this one wins
+        } else {
+            questions[i].expert_ranking = 2; // everyone else loses
+        }
+    }
+
+    renderSegments(); // redraw so the gold border moves to the new winner
+    showStatus('Question selected! Hit "Save All Changes" to persist.', 'success');
 }
 
 // ── Keep segmentsData in sync as user types ──────────────────────────────────
