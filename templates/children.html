@@ -6,8 +6,80 @@
   <title>Kids Videos | Piggyback</title>
   <link rel="stylesheet" href="/assets/css/children.css">
   
-  <!-- Quiz scoring CSS -->
+  <!-- Learner flow CSS -->
   <style>
+  /* ── Login screen ── */
+  #screen-login {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+    padding: 24px;
+  }
+  #screen-login .login-card {
+    background: white;
+    border-radius: 24px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+    padding: 48px 40px;
+    max-width: 420px;
+    width: 100%;
+    text-align: center;
+  }
+  #screen-login .login-logo {
+    font-size: 64px;
+    margin-bottom: 12px;
+  }
+  #screen-login h1 {
+    font-size: 28px;
+    font-weight: 700;
+    color: #2c3e50;
+    margin: 0 0 8px 0;
+  }
+  #screen-login .login-subtitle {
+    color: #6c757d;
+    font-size: 15px;
+    margin: 0 0 32px 0;
+  }
+  #screen-login input[type="text"] {
+    width: 100%;
+    padding: 14px 16px;
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    font-size: 20px;
+    text-align: center;
+    letter-spacing: 3px;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 0.2s;
+  }
+  #screen-login input[type="text"]:focus {
+    border-color: #fcb69f;
+  }
+  #screen-login .login-btn {
+    margin-top: 16px;
+    width: 100%;
+    padding: 14px;
+    background: #ff7043;
+    color: white;
+    border: none;
+    border-radius: 12px;
+    font-size: 18px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  #screen-login .login-btn:hover { background: #e64a19; }
+  #screen-login .login-btn:disabled { background: #ccc; cursor: not-allowed; }
+  #screen-login .login-error {
+    margin-top: 14px;
+    color: #dc3545;
+    font-size: 14px;
+    min-height: 20px;
+  }
+
+  /* ── Quiz scoring animation ── */
   @keyframes fadeInOut {
       0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
       20% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
@@ -18,7 +90,21 @@
 </head>
 
 <body>
-  <main class="kids-page">
+
+  <!-- ── Step 1: Expert ID Login ── -->
+  <div id="screen-login">
+    <div class="login-card">
+      <div class="login-logo">🐷</div>
+      <h1>Piggyback Learning</h1>
+      <p class="login-subtitle">Enter your Expert ID to get started</p>
+      <input id="expert-id-input" type="text" placeholder="Expert ID" maxlength="20" autocomplete="off">
+      <button id="login-btn" class="login-btn">Let's Go! →</button>
+      <p id="login-error" class="login-error"></p>
+    </div>
+  </div>
+
+  <!-- ── Steps 2-5: Main learning flow (hidden until login) ── -->
+  <main class="kids-page" id="main-flow" style="display:none;">
   
     <!-- Score Tracker -->
     <div id="scoreTracker" style="
@@ -250,6 +336,74 @@ function getChildId() {
 }
 
 console.log('✅ Quiz scoring ready!');
+</script>
+
+<!-- ── Learner Flow State Machine ── -->
+<script>
+// ── State ──────────────────────────────────────────────────────────────
+const STATE_KEY = 'learnerFlowState';
+
+function loadState() {
+    try { return JSON.parse(sessionStorage.getItem(STATE_KEY)) || {}; }
+    catch { return {}; }
+}
+function saveState(patch) {
+    const s = Object.assign(loadState(), patch);
+    sessionStorage.setItem(STATE_KEY, JSON.stringify(s));
+    return s;
+}
+
+// ── Step 1: Expert ID Login ─────────────────────────────────────────────
+(function initLogin() {
+    const input  = document.getElementById('expert-id-input');
+    const btn    = document.getElementById('login-btn');
+    const errEl  = document.getElementById('login-error');
+
+    // If we already have a valid expert_id in session, skip login
+    const saved = loadState();
+    if (saved.expert_id && saved.children) {
+        showMainFlow();
+        return;
+    }
+
+    btn.addEventListener('click', doLogin);
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
+
+    async function doLogin() {
+        const expertId = input.value.trim();
+        if (!expertId) {
+            errEl.textContent = 'Please enter your Expert ID.';
+            return;
+        }
+        btn.disabled = true;
+        errEl.textContent = '';
+        try {
+            const res  = await fetch(`/api/learners/experts/${encodeURIComponent(expertId)}/children`);
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                errEl.textContent = data.error || 'Expert ID not found. Please try again.';
+                return;
+            }
+            if (!data.children || data.children.length === 0) {
+                errEl.textContent = 'No active children found for this Expert ID.';
+                return;
+            }
+            saveState({ expert_id: expertId, children: data.children, step: 'profiles' });
+            showMainFlow();
+        } catch (err) {
+            console.error(err);
+            errEl.textContent = 'Network error. Please check your connection.';
+        } finally {
+            btn.disabled = false;
+        }
+    }
+})();
+
+function showMainFlow() {
+    document.getElementById('screen-login').style.display = 'none';
+    document.getElementById('main-flow').style.display = '';
+    // TODO: next steps will render profiles/companion/library here
+}
 </script>
 
 </body>

@@ -23,6 +23,7 @@ from app.services.children_service import(
     list_children,
     update_child,
     deactivate_child,
+    delete_child,
 )
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -340,6 +341,15 @@ async def api_admin_delete_expert(expert_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="expert not found")
     return {"success": True}
+
+# Permanently delete a child from the database
+@router_admin_api.delete("/admin/children/{child_id}")
+async def api_admin_delete_child(child_id: str):
+    deleted = delete_child(child_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="child not found")
+    return {"success": True}
+
 
 #Admin loads video + current expert assignment state for assignment UI bootstrap
 @router_admin_api.get("/admin/videos/assignments")
