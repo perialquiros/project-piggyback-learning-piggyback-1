@@ -100,6 +100,21 @@
     color: #2c3e50;
     box-shadow: 0 2px 8px rgba(0,0,0,0.12);
   }
+  #screen-profiles .back-to-login {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    background: white;
+    border: none;
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #6a1b9a;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  }
+  #screen-profiles .back-to-login:hover { background: #f3e5f5; }
   #screen-profiles h1 {
     font-size: 36px;
     font-weight: 700;
@@ -172,6 +187,7 @@
 
   <!-- ── Step 2: Child Profile Cards ── -->
   <div id="screen-profiles">
+    <button class="back-to-login" id="back-to-login-btn">← Switch Expert</button>
     <div class="expert-badge" id="expert-badge"></div>
     <h1>Who's Watching?</h1>
     <p class="profiles-subtitle" id="profiles-subtitle"></p>
@@ -485,11 +501,26 @@ const CHILD_ICON_EMOJI = {
     bear: '🐻', alligator: '🐊', rabbit: '🐰', lion: '🦁', penguin: '🐧'
 };
 
+function goBackToLogin() {
+    // Clear all session state so the next visit always starts at login
+    sessionStorage.removeItem(STATE_KEY);
+    document.getElementById('screen-profiles').style.display = 'none';
+    document.getElementById('screen-login').style.display = 'flex';
+    document.getElementById('expert-id-input').value = '';
+    document.getElementById('login-error').textContent = '';
+}
+
+// Always require login when the user navigates away or closes the tab
+window.addEventListener('beforeunload', () => sessionStorage.removeItem(STATE_KEY));
+
 function showProfiles() {
     // Hide login, show profiles screen
     document.getElementById('screen-login').style.display = 'none';
     const screen = document.getElementById('screen-profiles');
     screen.style.display = 'flex';
+
+    // Wire up the "Switch Expert" back button
+    document.getElementById('back-to-login-btn').onclick = goBackToLogin;
 
     const { expert_name, children } = loadState();
 
