@@ -515,6 +515,12 @@ async function saveScoreAndClose() {
 }
 
 function getChildId() {
+    // Use the real child_id selected during the learner flow
+    const state = loadState();
+    if (state.selected_child && state.selected_child.child_id) {
+        return state.selected_child.child_id;
+    }
+    // Fallback for direct access outside the learner flow
     let id = sessionStorage.getItem('childId');
     if (!id) {
         id = 'child_' + Date.now();
