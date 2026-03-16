@@ -1331,9 +1331,9 @@
       }
     }
 
-    function tryRecordAnswer(question, answer, spoken, status, sim) {
+    function tryRecordAnswer(question, answer, spoken, status, sim, questionType) {
       if (typeof recordAnswer === "function") {
-        recordAnswer(question, answer, spoken, status, sim);
+        recordAnswer(question, answer, spoken, status, sim, questionType);
       }
     }
 
@@ -1783,7 +1783,7 @@
 
           correctAnswers++;
           updateProgress();
-          tryRecordAnswer(q.question, q.answer, spoken, "correct", sim);
+          tryRecordAnswer(q.question, q.answer, spoken, "correct", sim, q.question_type);
 
           await deliverFeedback({
             message: celebrationMessage,
@@ -1810,7 +1810,7 @@
             minVisibleMs: MIN_FEEDBACK_DISPLAY_MS
           });
 
-          tryRecordAnswer(q.question, q.answer, spoken, "almost", sim);
+          tryRecordAnswer(q.question, q.answer, spoken, "almost", sim, q.question_type);
 
           setPlayerTime(rewindTo);
           await wait(200);
@@ -1824,7 +1824,7 @@
           minVisibleMs: MIN_FEEDBACK_DISPLAY_MS
         });
 
-        tryRecordAnswer(q.question, q.answer, spoken, "wrong", sim);
+        tryRecordAnswer(q.question, q.answer, spoken, "wrong", sim, q.question_type);
 
         setPlayerTime(rewindTo);
         await wait(200);
@@ -1941,6 +1941,30 @@
 
 
 
+    // Expose scoped loader for the learner flow state machine.
+    // Called from children.html after companion selection with a real child_id.
+    // Stops video playback — called by back button when leaving the library/player screen
+    window.__stopVideo = function() {
+        if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
+            ytPlayer.pauseVideo();
+        }
+    };
+
+    window.__loadScopedVideos = async function(childId) {
+        try {
+            const res = await fetch(`/api/learners/children/${encodeURIComponent(childId)}/videos`);
+            const data = await res.json();
+            libraryVideos = Array.isArray(data.videos) ? data.videos : [];
+            applyFilters();
+        } catch (err) {
+            console.error('[Error] loading scoped videos:', err);
+            videoGrid.innerHTML = '<div class="video-empty">Couldn\'t load videos right now.</div>';
+        }
+    };
+
     // Init
     loadConfig();
-    loadVideos();
+    // Only auto-load all videos if NOT in the learner flow (which uses scoped videos per child)
+    if (!sessionStorage.getItem('learnerFlowState')) {
+        loadVideos();
+    }

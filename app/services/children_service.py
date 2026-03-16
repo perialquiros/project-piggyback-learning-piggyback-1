@@ -272,3 +272,14 @@ def update_child(
 
 def deactivate_child(child_id: str) -> Optional[Dict[str, Any]]:
     return update_child(child_id, is_active=False)
+
+
+def delete_child(child_id: str) -> bool:
+    """Permanently delete a child record from the database."""
+    child_id = normalize_child_id(child_id)
+    if not child_id:
+        return False
+    with get_conn() as conn:
+        cur = conn.execute("DELETE FROM children WHERE child_id = ?", (child_id,))
+        conn.commit()
+        return cur.rowcount > 0

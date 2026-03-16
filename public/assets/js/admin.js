@@ -840,6 +840,7 @@ function renderChildrenTable() {
                 <button type="button" class="btn ${child.is_active ? '' : 'btn-success'}" data-action="toggle-child">
                     ${child.is_active ? 'Deactivate' : 'Activate'}
                 </button>
+                <button type="button" class="btn btn-danger" data-action="delete-child">Remove</button>
             </td>
         </tr>
     `).join('');
@@ -871,6 +872,30 @@ function renderChildrenTable() {
             await handleLinkChild(row);
         });
     });
+
+    tbody.querySelectorAll('[data-action="delete-child"]').forEach((btn) => {
+        btn.addEventListener('click', async (event) => {
+            const row = event.currentTarget.closest('tr');
+            await handleDeleteChild(row);
+        });
+    });
+}
+
+async function handleDeleteChild(row) {
+    const childId = row.dataset.childId;
+    if (!confirm(`Permanently remove child "${childId}"? This cannot be undone.`)) return;
+    try {
+        const resp = await fetch(`/api/admin/children/${encodeURIComponent(childId)}`, { method: 'DELETE' });
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || !data.success) {
+            throw new Error(data.detail || data.message || 'Failed to remove child.');
+        }
+        row.remove();
+        await loadChildrenDashboard(false);
+        setAdminPanelStatus('child-admin-status', `Child "${childId}" deleted.`, 'success');
+    } catch (error) {
+        setAdminPanelStatus('child-admin-status', error.message || 'Failed to remove child.', 'error');
+    }
 }
 
 function childMatchesCurrentFilters(child) {

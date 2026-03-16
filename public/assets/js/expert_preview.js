@@ -49,6 +49,14 @@
             container: null,
             modals: []
         };
+        let reviewControlData = {
+            segments: [],
+            selectedSegmentKey: null,
+            selectedQuestionKey: null
+        };
+        let reviewControlCurrentEntry = null;
+        let reviewControlEditWrapperElement = null;
+        let personaVariantsCache = {};
 
         function getFullscreenElement() {
             return document.fullscreenElement ||
@@ -275,6 +283,92 @@
                     llmModalState.rankingComment = llmRankingCommentInput.value;
                 });
             }
+
+            const reviewSegmentSelect = document.getElementById('review-control-segment-select');
+            if (reviewSegmentSelect) {
+                reviewSegmentSelect.addEventListener('change', () => {
+                    reviewControlData.selectedSegmentKey = reviewSegmentSelect.value;
+                    renderReviewControlPanel();
+                });
+            }
+
+            const reviewSkipButton = document.getElementById('review-control-skip-btn');
+            if (reviewSkipButton) {
+                reviewSkipButton.addEventListener('click', () => skipSegment());
+            }
+
+            const reviewToggleEditButton = document.getElementById('review-control-toggle-edit-btn');
+            if (reviewToggleEditButton) {
+                reviewToggleEditButton.addEventListener('click', () => {
+                    if (reviewControlCurrentEntry) {
+                        toggleEditMode(reviewControlCurrentEntry.questionKey, true);
+                    }
+                });
+            }
+
+            const reviewSaveInlineButton = document.getElementById('review-control-save-inline-btn');
+            if (reviewSaveInlineButton) {
+                reviewSaveInlineButton.addEventListener('click', () => {
+                    if (reviewControlCurrentEntry) {
+                        saveEditAndClose(reviewControlCurrentEntry.questionKey);
+                        renderReviewQuestions();
+                    }
+                });
+            }
+
+            const reviewSaveModalButton = document.getElementById('review-control-save-modal-btn');
+            if (reviewSaveModalButton) {
+                reviewSaveModalButton.addEventListener('click', () => {
+                    if (reviewControlCurrentEntry && reviewControlEditWrapperElement) {
+                        saveLLMModalQuestion(reviewControlCurrentEntry.questionKey, reviewControlEditWrapperElement);
+                        renderReviewQuestions();
+                    }
+                });
+            }
+
+            const reviewTrashButton = document.getElementById('review-control-trash-btn');
+            if (reviewTrashButton) {
+                reviewTrashButton.addEventListener('click', () => {
+                    if (reviewControlCurrentEntry) {
+                        trashLLMQuestion(reviewControlCurrentEntry.questionKey);
+                    }
+                });
+            }
+
+            const reviewRestoreButton = document.getElementById('review-control-restore-btn');
+            if (reviewRestoreButton) {
+                reviewRestoreButton.addEventListener('click', () => {
+                    if (reviewControlCurrentEntry) {
+                        restoreLLMQuestion(reviewControlCurrentEntry.questionKey);
+                    }
+                });
+            }
+
+            const reviewExpertBestButton = document.getElementById('review-control-expert-best-btn');
+            if (reviewExpertBestButton) {
+                reviewExpertBestButton.addEventListener('click', () => {
+                    if (reviewControlCurrentEntry) {
+                        setExpertBestQuestion(reviewControlCurrentEntry.segmentKey, reviewControlCurrentEntry.questionKey);
+                    }
+                });
+            }
+
+            const reviewStartModalEditButton = document.getElementById('review-control-start-modal-edit-btn');
+            if (reviewStartModalEditButton) {
+                reviewStartModalEditButton.addEventListener('click', () => {
+                    if (reviewControlCurrentEntry) {
+                        startLLMModalEdit(reviewControlCurrentEntry.questionKey);
+                        renderReviewControlPanel();
+                    }
+                });
+            }
+
+            const reviewCancelModalEditButton = document.getElementById('review-control-cancel-modal-edit-btn');
+            if (reviewCancelModalEditButton) {
+                reviewCancelModalEditButton.addEventListener('click', () => {
+                    cancelLLMModalEdit();
+                });
+            }
         });
         
         function initStepNavigation() {
@@ -390,6 +484,12 @@
                             <span>Files: ${fileCount}</span>
                             <span>${questionText}</span>
                         </div>
+                        <!-- Link to re-edit finalized questions for this video -->
+                        <a href="/expert/edit/${video.id}"
+                           onclick="event.stopPropagation()"
+                           style="display:inline-block;margin-top:6px;font-size:.8rem;color:#2563eb;text-decoration:none;background:#eff6ff;border:1px solid #bfdbfe;padding:3px 10px;border-radius:4px">
+                           ✏ Change Questions
+                        </a>
                     </div>
                 `;
 
@@ -2796,6 +2896,37 @@
             }
 
             updateManualQuestionButtonState();
+
+            const reviewControlPanel = document.getElementById('review-control-panel');
+            if (reviewControlPanel) {
+                reviewControlPanel.style.display = 'none';
+            }
+
+            reviewControlData.segments = [];
+            reviewControlData.selectedSegmentKey = null;
+            reviewControlData.selectedQuestionKey = null;
+            reviewControlCurrentEntry = null;
+            reviewControlEditWrapperElement = null;
+
+            const reviewControlEditor = document.getElementById('review-control-editor');
+            if (reviewControlEditor) {
+                reviewControlEditor.innerHTML = '';
+            }
+
+            const reviewControlStatus = document.getElementById('review-control-status');
+            if (reviewControlStatus) {
+                reviewControlStatus.textContent = 'Load a segment to unlock AI question controls.';
+            }
+
+            const reviewControlType = document.getElementById('review-control-question-type');
+            if (reviewControlType) {
+                reviewControlType.textContent = '';
+            }
+
+            const reviewControlSelect = document.getElementById('review-control-segment-select');
+            if (reviewControlSelect) {
+                reviewControlSelect.innerHTML = '';
+            }
         }
 
         function updateManualQuestionButtonState() {
@@ -2805,7 +2936,7 @@
             }
 
             const enable = Boolean(currentVideoId && hasActivePlayer());
-            manualButton.disabled = !enable;
+            manualButton.disabled = !enable || isVideoPlaybackLocked();
         }
 
         function updateReviewButtonState() {
@@ -2840,6 +2971,12 @@
                 return;
             }
 
+            reviewControlData.segments = [];
+            reviewControlData.selectedSegmentKey = null;
+            reviewControlData.selectedQuestionKey = null;
+            reviewControlCurrentEntry = null;
+            reviewControlEditWrapperElement = null;
+
             if (reviewVideo) {
                 reviewVideo.textContent = getSelectedVideoLabel() || 'Not selected';
             }
@@ -2855,213 +2992,321 @@
 
             reviewList.innerHTML = '';
 
-            // Initialize llmQuestionEdits if needed
             if (!llmQuestionEdits[currentVideoId]) {
                 llmQuestionEdits[currentVideoId] = {};
-            } 
+            }
 
-            // Create accordion for each segment
             for (let index = 0; index < currentSegments.length; index++) {
                 const segment = currentSegments[index];
                 const segmentKey = getSegmentKey(segment);
                 const questions = await resolveSegmentQuestions(segment);
-                
-                const accordionItem = document.createElement('div');
-                accordionItem.className = 'accordion-item';
 
-                // Create accordion header
-                const header = document.createElement('div');
-                header.className = 'accordion-header';
-                if (index === 0) {
-                    header.classList.add('active');
-                }
-                
+                const segmentBlock = document.createElement('div');
+                segmentBlock.className = 'segment-block';
+                segmentBlock.dataset.segmentKey = segmentKey;
 
-                const title = document.createElement('div');
-                title.className = 'accordion-title';
-                title.innerHTML = `
-                    <span class="segment-index">Segment ${index + 1}</span>
-                    <span class="segment-time">${formatTime(segment.start)} - ${formatTime(segment.end)}</span>
+                // Collapsible blue header bar
+                const headerBar = document.createElement('div');
+                headerBar.className = 'segment-header-bar' + (index === 0 ? ' open' : '');
+                const startLabel = formatTime(segment.start);
+                const endLabel = formatTime(segment.end);
+                headerBar.innerHTML = `
+                    <span class="segment-index-label">Segment ${index + 1}</span>
+                    <span class="segment-time-label">${startLabel} - ${endLabel}</span>
+                    <span class="segment-header-chevron">${index === 0 ? '&#9650;' : '&#9660;'}</span>
                 `;
-                
-                const arrow = document.createElement('span');
-                arrow.className = 'accordion-arrow';
-                arrow.innerHTML = '&#9662;';
-                
-                header.appendChild(title);
-                header.appendChild(arrow);
-                
-                // Create accordion content
-                const content = document.createElement('div');
-                content.className = 'accordion-content';
-                if (index === 0) {
-                    content.classList.add('active');
-                }
-                
-                const inner = document.createElement('div');
-                inner.className = 'accordion-inner';
-                
-                // Left column - Expert Questions
+                headerBar.addEventListener('click', () => {
+                    const bodyEl = segmentBlock.querySelector('.questions-grid');
+                    const chevron = headerBar.querySelector('.segment-header-chevron');
+                    const isOpen = bodyEl.style.display !== 'none';
+                    bodyEl.style.display = isOpen ? 'none' : 'grid';
+                    chevron.innerHTML = isOpen ? '&#9660;' : '&#9650;';
+                    headerBar.classList.toggle('open', !isOpen);
+                });
+                segmentBlock.appendChild(headerBar);
+
+                // 4-column grid
+                const gridBody = document.createElement('div');
+                gridBody.className = 'questions-grid';
+                if (index > 0) gridBody.style.display = 'none';
+
+                // --- EXPERT COLUMN ---
                 const expertColumn = document.createElement('div');
                 expertColumn.className = 'question-column expert-column';
-                
-                const expertHeader = document.createElement('div');
-                expertHeader.className = 'column-header';
-                expertHeader.textContent = 'Expert Questions';
-                expertColumn.appendChild(expertHeader);
-                
-                // Get expert question for this segment
+                expertColumn.innerHTML = '<div class="column-header">Expert Questions</div>';
+
                 const expertEntry = getExpertQuestionForSegment(segment);
-                
-                // Also find manual questions that fall within this segment
                 const manualQuestionsInSegment = [];
                 Object.entries(expertQuestions).forEach(([key, entry]) => {
                     if (entry && entry.isManual && entry.timestamp >= segment.start && entry.timestamp <= segment.end) {
                         manualQuestionsInSegment.push(entry);
                     }
                 });
-                
-                // Display segment expert question first
+
                 if (expertEntry && !expertEntry.isManual) {
-                    const expertDiv = document.createElement('div');
-                    expertDiv.className = 'expert-question-display';
-                    
                     if (expertEntry.skipped) {
-                        expertDiv.classList.add('skipped');
-                        expertDiv.innerHTML = `
-                            <div class="question-type-label">SKIPPED</div>
-                            <div style="color: #dd6b20;">Segment marked as skipped</div>
-                            ${expertEntry.skipReason ? `<div style="color: #9c4221; font-size: 0.9rem;">Reason: ${expertEntry.skipReason}</div>` : ''}
-                        `;
+                        expertColumn.innerHTML += `
+                            <div class="editable-question skipped">
+                                <div class="question-type-label">SKIPPED</div>
+                                <div style="color:#dd6b20;">Segment marked as skipped</div>
+                                ${expertEntry.skipReason ? `<div style="font-size:.85rem;color:#9c4221;">Reason: ${expertEntry.skipReason}</div>` : ''}
+                            </div>`;
                     } else {
-                        expertDiv.innerHTML = `
-                            <div class="question-type-label">${getExpertQuestionTypeLabel(expertEntry.questionType)}</div>
-                            <div style="font-weight: 600; margin-bottom: 8px;">${expertEntry.question || 'No question'}</div>
-                            <div style="color: #4a5568;">Answer: ${expertEntry.answer || 'No answer'}</div>
-                        `;
+                        expertColumn.innerHTML += `
+                            <div class="editable-question">
+                                <div class="question-type-label">${getExpertQuestionTypeLabel(expertEntry.questionType)}</div>
+                                <div class="question-preview">${expertEntry.question || ''}</div>
+                                <div class="answer-preview">${expertEntry.answer || ''}</div>
+                            </div>`;
                     }
-                    expertColumn.appendChild(expertDiv);
                 }
-                
-                // Display manual questions in this segment
-                if (manualQuestionsInSegment.length > 0) {
-                    manualQuestionsInSegment.forEach(manualEntry => {
-                        const manualDiv = document.createElement('div');
-                        manualDiv.className = 'expert-question-display';
-                        manualDiv.style.borderLeft = '4px solid #38a169';
-                        manualDiv.style.marginTop = '12px';
-                        
-                        manualDiv.innerHTML = `
-                            <div style="font-size: 0.8rem; color: #38a169; margin-bottom: 6px;">Manual @ ${formatTime(manualEntry.timestamp)}</div>
-                            <div class="question-type-label" style="background: #38a169;">${getExpertQuestionTypeLabel(manualEntry.questionType)}</div>
-                            <div style="font-weight: 600; margin-bottom: 8px;">${manualEntry.question || 'No question'}</div>
-                            <div style="color: #4a5568;">Answer: ${manualEntry.answer || 'No answer'}</div>
-                        `;
-                        expertColumn.appendChild(manualDiv);
-                    });
-                }
-                
+
+                manualQuestionsInSegment.forEach(me => {
+                    expertColumn.innerHTML += `
+                        <div class="editable-question" style="border-left:4px solid #38a169;margin-top:10px;">
+                            <div style="font-size:.75rem;color:#38a169;margin-bottom:4px;">Manual @ ${formatTime(me.timestamp)}</div>
+                            <div class="question-type-label" style="background:#38a169;">${getExpertQuestionTypeLabel(me.questionType)}</div>
+                            <div class="question-preview">${me.question || ''}</div>
+                            <div class="answer-preview">${me.answer || ''}</div>
+                        </div>`;
+                });
+
                 if (!expertEntry && manualQuestionsInSegment.length === 0) {
-                    expertColumn.innerHTML += '<div style="color: #718096; text-align: center; padding: 20px;">No expert question added yet</div>';
+                    expertColumn.innerHTML += '<div class="no-question-placeholder">No expert question added yet</div>';
                 }
-                
-                // Right column - LLM Questions
-                const llmColumn = document.createElement('div');
-                llmColumn.className = 'question-column llm-column';
-                
-                const llmHeader = document.createElement('div');
-                llmHeader.className = 'column-header';
-                llmHeader.textContent = 'AI-Generated Questions';
-                llmColumn.appendChild(llmHeader);
 
-                if (questions && typeof questions === 'object' && Object.keys(questions).length > 0) {
-                    // First, identify the best question
-                    let bestQuestionText = null;
-                    if (segment.result && segment.result.best_question) {
-                        bestQuestionText = segment.result.best_question;
-                    }
+                gridBody.appendChild(expertColumn);
 
-                    // Check for expert-selected best question
-                    const expertBestKey = llmQuestionEdits[currentVideoId] && 
-                                         llmQuestionEdits[currentVideoId][`${segmentKey}_expertBest`];
+                // --- PERSONA COLUMNS ---
+                const personas = [
+                    { key: 'bunny',     label: 'Bunny Questions',     icon: '🐰', cssClass: 'bunny-column' },
+                    { key: 'alligator', label: 'Alligator Questions', icon: '🐊', cssClass: 'alligator-column' },
+                    { key: 'pig',       label: 'Pig Questions',       icon: '🐷', cssClass: 'pig-column' },
+                ];
 
-                    const getAiRankValue = (data) => {
-                        if (!data) return Number.POSITIVE_INFINITY;
-                        const rawRank = data.rank ?? data.ranking ?? data.llm_ranking ?? data.llmRank;
-                        const parsed = Number(rawRank);
-                        if (!Number.isFinite(parsed) || parsed <= 0) {
-                            return Number.POSITIVE_INFINITY;
-                        }
-                        return parsed;
-                    };
+                personas.forEach(persona => {
+                    const col = document.createElement('div');
+                    col.className = `question-column llm-column ${persona.cssClass}`;
+                    col.id = `persona-col-${segmentKey}-${persona.key}`;
+                    col.innerHTML = `
+                        <div class="column-header">${persona.icon} ${persona.label}</div>
+                        <div class="persona-loading">Generating ${persona.label.toLowerCase()}...</div>
+                    `;
+                    gridBody.appendChild(col);
+                });
 
-                    const sortedEntries = Object.entries(questions).sort((a, b) => {
-                        const rankA = getAiRankValue(a[1]);
-                        const rankB = getAiRankValue(b[1]);
-                        if (rankA !== rankB) {
-                            return rankA - rankB;
-                        }
-                        return String(a[0]).localeCompare(String(b[0]));
-                    });
+                segmentBlock.appendChild(gridBody);
+                reviewList.appendChild(segmentBlock);
 
-                    sortedEntries.forEach(([type, data]) => {
-                        const questionKey = `${segmentKey}_${type}`;
-                        
-                        // Get any existing edits for this question
-                        const edits = llmQuestionEdits[currentVideoId][questionKey] || {};
-                        const isTrashed = edits.trashed || false;
-                        const currentQuestion = data.q || '';
-                        const currentAnswer = data.a || '';
-                        
-                        // Check if this is the best question
-                        const isAIBestQuestion = bestQuestionText && (data.q === bestQuestionText);
-                        const isExpertBestQuestion = expertBestKey === questionKey;
-                        
-                        const editableDiv = document.createElement('div');
-                        editableDiv.className = 'editable-question';
-                        editableDiv.id = `question-${questionKey}`;
-                        if (isTrashed) editableDiv.classList.add('trashed');
-                        if (isAIBestQuestion || isExpertBestQuestion) editableDiv.classList.add('best-question');
-                        
-                        editableDiv.innerHTML = `
-                            <div class="question-header">
-                                <div class="question-summary">
-                                    <div>
-                                        <span class="question-type-label">${type}</span>
-                                        ${isAIBestQuestion ? '<span class="best-indicator">AI BEST</span>' : ''}
-                                        ${isExpertBestQuestion ? '<span class="best-indicator" style="background: #27ae60;">EXPERT BEST</span>' : ''}
-                                    </div>
-                                    <div class="question-preview">${currentQuestion}</div>
-                                    <div class="answer-preview">${currentAnswer}</div>
-                                </div>
-                            </div>
-                        `;
-                        
-                        llmColumn.appendChild(editableDiv);
-                    });
+                // Async: fetch and populate persona variants
+                if (questions && Object.keys(questions).length > 0) {
+                    fetchAndRenderPersonaVariants(segmentKey, segment, questions);
                 } else {
-                    llmColumn.innerHTML += '<div style="color: #718096; text-align: center; padding: 20px;">No AI-generated questions for this segment</div>';
+                    personas.forEach(persona => {
+                        const col = document.getElementById(`persona-col-${segmentKey}-${persona.key}`);
+                        if (col) {
+                            const loadEl = col.querySelector('.persona-loading');
+                            if (loadEl) loadEl.textContent = 'No AI questions for this segment.';
+                        }
+                    });
                 }
-                
-                inner.appendChild(expertColumn);
-                inner.appendChild(llmColumn);
-                content.appendChild(inner);
-                
-                // Add header click handler
-                header.addEventListener('click', () => toggleAccordion(index));
-                
-                accordionItem.appendChild(header);
-                accordionItem.appendChild(content);
-                reviewList.appendChild(accordionItem);
             }
-            
-            // Add save button
+
+            // Save button
             const saveSection = document.createElement('div');
+            saveSection.className = 'review-save-section';
             saveSection.style.textAlign = 'center';
+            // Show finalize button + link to re-edit page (visible after finalization)
             saveSection.innerHTML = `
                 <button class="btn-save-changes" onclick="saveAllLLMEdits()">Finalize questions and submit</button>
+                <a href="/expert/edit/${currentVideoId}" style="display:inline-block;margin-left:16px;font-size:.9rem;color:#2563eb">Edit finalized questions →</a>
             `;
             reviewList.appendChild(saveSection);
+            renderReviewControlPanel();
+        }
+
+        async function fetchAndRenderPersonaVariants(segmentKey, segment, questions) {
+            const personas = ['bunny', 'alligator', 'pig'];
+            const cacheKey = `${currentVideoId}_${segmentKey}`;
+
+            if (personaVariantsCache[cacheKey]) {
+                renderPersonaColumns(segmentKey, personaVariantsCache[cacheKey]);
+                return;
+            }
+
+            try {
+                const bestQuestionText = segment.result && segment.result.best_question
+                    ? segment.result.best_question
+                    : null;
+
+                const response = await fetch('/api/expert/questions/persona-variants', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ questions, best_question: bestQuestionText })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (data.success && data.variants) {
+                    personaVariantsCache[cacheKey] = data.variants;
+                    renderPersonaColumns(segmentKey, data.variants);
+                } else {
+                    throw new Error(data.message || 'Failed to generate variants');
+                }
+            } catch (err) {
+                console.warn('Persona variants failed:', err);
+                personas.forEach(persona => {
+                    const col = document.getElementById(`persona-col-${segmentKey}-${persona}`);
+                    if (col) {
+                        const loadEl = col.querySelector('.persona-loading');
+                        if (loadEl) loadEl.textContent = 'Could not generate questions.';
+                    }
+                });
+            }
+        }
+
+        function renderPersonaColumns(segmentKey, variants) {
+            const personas = ['bunny', 'alligator', 'pig'];
+            personas.forEach(persona => {
+                const col = document.getElementById(`persona-col-${segmentKey}-${persona}`);
+                if (!col) return;
+
+                const loadingEl = col.querySelector('.persona-loading');
+                if (loadingEl) loadingEl.remove();
+
+                const personaQuestions = variants[persona] || {};
+                if (Object.keys(personaQuestions).length === 0) {
+                    col.innerHTML += '<div class="no-question-placeholder">No questions generated.</div>';
+                    return;
+                }
+
+                Object.entries(personaQuestions).forEach(([type, data]) => {
+                    if (!data || typeof data !== 'object') return;
+                    const isAIBest = data.is_best || false;
+                    const card = document.createElement('div');
+                    card.className = 'editable-question' + (isAIBest ? ' best-question' : '');
+                    card.innerHTML = `
+                        <div class="question-header-row">
+                            <span class="question-type-label">${type.toUpperCase()}</span>
+                            ${isAIBest ? '<span class="ai-best-badge">AI BEST</span>' : ''}
+                        </div>
+                        <div class="question-preview">${data.q || ''}</div>
+                        <div class="answer-preview">${data.a || ''}</div>
+                    `;
+                    col.appendChild(card);
+                });
+            });
+        }
+
+        function renderReviewControlPanel() {
+            const panel = document.getElementById('review-control-panel');
+            const segmentSelect = document.getElementById('review-control-segment-select');
+            const statusEl = document.getElementById('review-control-status');
+            const typeLabel = document.getElementById('review-control-question-type');
+            const lockStatus = document.getElementById('review-control-lock-status');
+            const editorHolder = document.getElementById('review-control-editor');
+
+            if (!panel || !segmentSelect || !statusEl || !editorHolder) {
+                return;
+            }
+
+            const segmentOptions = reviewControlData.segments.filter(segment => segment.entries && segment.entries.length > 0);
+            if (!segmentOptions.length) {
+                panel.style.display = 'none';
+                reviewControlCurrentEntry = null;
+                reviewControlEditWrapperElement = null;
+                return;
+            }
+
+            panel.style.display = 'block';
+            segmentSelect.innerHTML = '';
+
+            segmentOptions.forEach(segment => {
+                const option = document.createElement('option');
+                option.value = segment.segmentKey;
+                option.textContent = `${segment.label} (${segment.timeText})`;
+                segmentSelect.appendChild(option);
+            });
+
+            if (!reviewControlData.selectedSegmentKey || !segmentOptions.some(segment => segment.segmentKey === reviewControlData.selectedSegmentKey)) {
+                reviewControlData.selectedSegmentKey = segmentOptions[0].segmentKey;
+            }
+
+            segmentSelect.value = reviewControlData.selectedSegmentKey;
+            let currentSegment = segmentOptions.find(segment => segment.segmentKey === reviewControlData.selectedSegmentKey);
+            if (!currentSegment) {
+                currentSegment = segmentOptions[0];
+                reviewControlData.selectedSegmentKey = currentSegment.segmentKey;
+                segmentSelect.value = currentSegment.segmentKey;
+            }
+
+            let selectedEntry = null;
+            if (currentSegment.entries.length > 0) {
+                if (reviewControlData.selectedQuestionKey && currentSegment.entries.some(entry => entry.questionKey === reviewControlData.selectedQuestionKey)) {
+                    selectedEntry = currentSegment.entries.find(entry => entry.questionKey === reviewControlData.selectedQuestionKey);
+                } else {
+                    selectedEntry = currentSegment.entries[0];
+                    reviewControlData.selectedQuestionKey = selectedEntry.questionKey;
+                }
+            }
+
+            if (!selectedEntry) {
+                panel.style.display = 'none';
+                reviewControlCurrentEntry = null;
+                reviewControlEditWrapperElement = null;
+                return;
+            }
+
+            reviewControlCurrentEntry = selectedEntry;
+
+            if (lockStatus) {
+                lockStatus.textContent = isVideoPlaybackLocked() ? 'Playback is locked (modal editing).' : 'Playback is unlocked.';
+            }
+
+            if (statusEl) {
+                statusEl.textContent = `${currentSegment.label} · ${selectedEntry.type}`;
+            }
+
+            if (typeLabel) {
+                typeLabel.textContent = selectedEntry.type;
+            }
+
+            if (editorHolder) {
+                editorHolder.innerHTML = '';
+                const editorCard = document.createElement('div');
+                editorCard.className = 'review-control-editor-card';
+                editorCard.id = `question-${selectedEntry.questionKey}`;
+
+                const questionField = document.createElement('textarea');
+                questionField.id = `edit-question-${selectedEntry.questionKey}`;
+                questionField.dataset.role = 'question';
+                questionField.value = selectedEntry.question || '';
+
+                const answerField = document.createElement('textarea');
+                answerField.id = `edit-answer-${selectedEntry.questionKey}`;
+                answerField.dataset.role = 'answer';
+                answerField.value = selectedEntry.answer || '';
+
+                editorCard.appendChild(questionField);
+                editorCard.appendChild(answerField);
+                editorHolder.appendChild(editorCard);
+
+                reviewControlEditWrapperElement = editorCard;
+            }
+
+            llmModalState.questions = currentSegment.entries.map(entry => ({
+                questionKey: entry.questionKey,
+                type: entry.type,
+                question: entry.question,
+                answer: entry.answer,
+                trashed: entry.trashed,
+                modified: entry.modified || false,
+                timestamp: entry.timestamp || new Date().toISOString()
+            }));
+            llmModalState.openQuestionKey = selectedEntry.questionKey;
         }
 
         function toggleAccordion(index) {
@@ -4099,7 +4344,7 @@
                 nextPauseEl.textContent = formatTime(segment.end);
             }
 
-            updateExpertQuestionsPanel(segment);
+            loadAIQuestionsForSegment(segment);
 
             const approveSection = document.getElementById('approve-section');
             if (approveSection) {
@@ -4670,4 +4915,28 @@
                 return `${mins}:${secs.toString().padStart(2, '0')}`;
             }
         }
+        function renderQuestion(question) {
+
+    if (!question) {
+        return `<div class="question-empty">No question available</div>`;
+    }
+
+    return `
+        <div class="editable-question">
+
+            <div class="question-type-label">
+                ${question.type || ""}
+            </div>
+
+            <div class="question-preview">
+                ${question.text || question.question || ""}
+            </div>
+
+            <div class="answer-preview">
+                ${question.answer || ""}
+            </div>
+
+        </div>
+    `;
+}
     

@@ -23,8 +23,11 @@ from app.services.children_service import(
     list_children,
     update_child,
     deactivate_child,
+    delete_child,
 )
-from fastapi.responses import HTMLResponse
+from app.services.report_service import get_child_report
+
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 #Pulls shared path from settings.py so all module uses the same directory
 from app.settings import DOWNLOADS_DIR, TEMPLATES_DIR
@@ -340,6 +343,15 @@ async def api_admin_delete_expert(expert_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="expert not found")
     return {"success": True}
+
+# Permanently delete a child from the database
+@router_admin_api.delete("/admin/children/{child_id}")
+async def api_admin_delete_child(child_id: str):
+    deleted = delete_child(child_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="child not found")
+    return {"success": True}
+
 
 #Admin loads video + current expert assignment state for assignment UI bootstrap
 @router_admin_api.get("/admin/videos/assignments")
@@ -732,3 +744,10 @@ async def ws_questions(websocket: WebSocket, video_id: str):
 def asyncio_to_thread(func, *args, **kwargs):
     loop = asyncio.get_event_loop()
     return loop.run_in_executor(None, lambda: func(*args, **kwargs))
+
+
+@router_admin_api.get("/reports/child/{child_id}")
+async def api_get_child_report(child_id: str):
+    """Return quiz score report for one child, used by parental reports tab."""
+    report = get_child_report(child_id)
+    return JSONResponse({"success": True, "report": report})

@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 import base64
 import json
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone
 from app.services.sqlite_store import init_db
 from app.services.expert_auth_service import (
     authenticate_expert,
@@ -19,6 +19,7 @@ from app.services.expert_auth_service import (
 )
 from app.services.children_service import get_child, list_children
 from video_quiz_routes import router_video_quiz, router_api, refresh_kids_videos_json
+from app.services.clients import OPENAI_CLIENT
 from fastapi import (
     FastAPI,
     Form,
@@ -35,6 +36,7 @@ from app.services.expert_review_service import (
     save_expert_question_payload,
     save_final_questions_payload,
 )
+from app.services.question_generation_service import generate_persona_variants
 #Stores expert login session in single cookie
 from starlette.middleware.sessions import SessionMiddleware
 
@@ -168,6 +170,27 @@ async def learner_list_children_for_expert(expert_id: str):
             "count": len(children),
         }
     )
+
+
+@app.get("/api/learners/children/{child_id}/report")
+async def learner_child_report(child_id: str):
+    from app.services.report_service import get_child_report
+    from app.services.quiz_scoring_service import get_child_scores
+
+    report = get_child_report(child_id)
+    scores = get_child_scores(child_id)
+
+    overall_score = scores.get("overall_percentage", 0) if scores.get("success") else 0
+    total_attempts = scores.get("total_attempts", 0) if scores.get("success") else 0
+
+    return JSONResponse({
+        "success": True,
+        "child_id": child_id,
+        "overall_score": overall_score,
+        "total_attempts": total_attempts,
+        "top_categories": report["summary"]["top_categories"],
+        "recent_videos": report["summary"]["recent_scores"],
+    })
 
 
 @app.get("/api/learners/children/{child_id}/videos")
@@ -415,6 +438,106 @@ async def save_final_questions(request: Request, payload: Dict[str, Any] = Body(
     return JSONResponse(result, status_code=status_code)
 
 
+# ============================================================
+# Expert: edit finalized questions (re-edit after finalize)
+# ============================================================
+
+@app.get("/expert/edit/{video_id}", response_class=HTMLResponse)
+async def expert_edit_questions_page(request: Request, video_id: str):
+    """Page for editing finalized questions after finalization."""
+    expert_identity = require_expert_session(request)
+    require_expert_video_access(request, video_id, auto_claim=False)
+    return templates.TemplateResponse("edit_questions.html", {
+        "request": request,
+        "video_id": video_id,
+        "expert_identity": expert_identity,
+    })
+
+
+@app.get("/api/expert/video/{video_id}/final-questions")
+async def get_final_questions_for_edit(request: Request, video_id: str):
+    """Returns the full raw final_questions.json so the expert can re-edit all questions."""
+    try:
+        require_expert_session(request)
+        require_expert_video_access(request, video_id, auto_claim=False)
+    except HTTPException as exc:
+        return JSONResponse({"success": False, "message": exc.detail}, status_code=exc.status_code)
+
+    path = DOWNLOADS_DIR / video_id / "final_questions" / "final_questions.json"
+    if not path.exists():
+        return JSONResponse({"success": False, "message": "No finalized questions found. Finalize from expert preview first."}, status_code=404)
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return JSONResponse({"success": True, "data": data})
+
+
+@app.post("/api/expert/video/{video_id}/update-questions")
+async def update_final_questions(request: Request, video_id: str, payload: Dict[str, Any] = Body(...)):
+    """Saves edited question/answer text back to final_questions.json."""
+    try:
+        require_expert_session(request)
+        require_expert_video_access(request, video_id, auto_claim=False)
+    except HTTPException as exc:
+        return JSONResponse({"success": False, "message": exc.detail}, status_code=exc.status_code)
+
+    path = DOWNLOADS_DIR / video_id / "final_questions" / "final_questions.json"
+    if not path.exists():
+        return JSONResponse({"success": False, "message": "No finalized questions found."}, status_code=404)
+
+    # Load existing data so we only overwrite segments (preserve metadata fields)
+    existing = json.loads(path.read_text(encoding="utf-8"))
+    existing["segments"] = payload.get("segments", existing.get("segments", []))
+    existing["updated_at"] = datetime.now(timezone.utc).isoformat()
+    path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+
+    return JSONResponse({"success": True, "message": "Questions updated successfully."})
+
+
+@app.post("/api/expert/video/{video_id}/regenerate-question")
+async def regenerate_single_question(request: Request, video_id: str, payload: Dict[str, Any] = Body(...)):
+    """Uses OpenAI to regenerate a single question+answer for a segment."""
+    try:
+        require_expert_session(request)
+        require_expert_video_access(request, video_id, auto_claim=False)
+    except HTTPException as exc:
+        return JSONResponse({"success": False, "message": exc.detail}, status_code=exc.status_code)
+
+    question_type = payload.get("question_type", "open_ended")
+    current_question = payload.get("current_question", "")
+    current_answer = payload.get("current_answer", "")
+    segment_start = payload.get("segment_start", "")
+    segment_end = payload.get("segment_end", "")
+
+    prompt = (
+        f"You are helping an expert improve a quiz question for a children's educational video.\n"
+        f"Segment time range: {segment_start}s to {segment_end}s\n"
+        f"Question type: {question_type}\n"
+        f"Current question: {current_question}\n"
+        f"Current answer: {current_answer}\n\n"
+        f"Please write an improved version of this question and answer. "
+        f"Keep it age-appropriate for children ages 5-10. "
+        f"Return ONLY a JSON object with keys 'question' and 'answer', nothing else."
+    )
+
+    try:
+        response = OPENAI_CLIENT.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=300,
+            temperature=0.7,
+        )
+        raw = response.choices[0].message.content.strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        result = json.loads(raw)
+        return JSONResponse({"success": True, "question": result.get("question", ""), "answer": result.get("answer", "")})
+    except Exception as e:
+        return JSONResponse({"success": False, "message": f"Regeneration failed: {e}"}, status_code=500)
+
+
 @app.get("/api/expert/videos")
 async def list_expert_videos(request: Request):
     try:
@@ -515,6 +638,23 @@ async def claim_expert_video(request: Request, video_id: str):
         return JSONResponse({"success": False, "message": str(exc)}, status_code=400)
 
     return JSONResponse({"success": True})
+
+
+@app.post("/api/expert/questions/persona-variants")
+async def get_persona_variants(request: Request, payload: Dict[str, Any] = Body(...)):
+    """Rephrase AI-generated questions into Bunny, Alligator, and Pig personas."""
+    try:
+        require_expert_session(request)
+    except HTTPException as exc:
+        return JSONResponse({"success": False, "message": exc.detail}, status_code=exc.status_code)
+
+    questions = payload.get("questions")
+    if not isinstance(questions, dict) or not questions:
+        return JSONResponse({"success": False, "message": "questions dict is required"}, status_code=400)
+
+    best_question = payload.get("best_question")
+    result = await asyncio.to_thread(generate_persona_variants, questions, best_question)
+    return JSONResponse(result)
 
 
 @app.post("/api/tts")
