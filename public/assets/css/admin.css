@@ -1,12 +1,13 @@
 
         .admin-tabs {
-            display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            display: flex;
             gap: 14px;
             margin: 0 0 22px 0;
+            width: 100%;
             }
 
             .admin-tab {
+            flex: 1;
             border: 0;
             border-radius: 14px;
             padding: 16px 14px;
@@ -36,15 +37,9 @@
             display: block;
             }
 
-            @media (max-width: 1100px) {
-            .admin-tabs {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-            }
-
             @media (max-width: 640px) {
             .admin-tabs {
-                grid-template-columns: 1fr;
+                flex-direction: column;
             }
             }
 
