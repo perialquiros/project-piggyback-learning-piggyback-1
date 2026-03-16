@@ -275,12 +275,12 @@
     <div class="companions-grid">
       <div class="companion-card" data-companion="pig">
         <div class="companion-emoji">🐷</div>
-        <div class="companion-name">Penny the Pig</div>
+        <div class="companion-name">Peppa the Pig</div>
         <div class="companion-desc">Playful and loves stories</div>
       </div>
       <div class="companion-card" data-companion="rabbit">
         <div class="companion-emoji">🐰</div>
-        <div class="companion-name">Buddy the Bunny</div>
+        <div class="companion-name">Judy the Bunny</div>
         <div class="companion-desc">Energetic and fun-loving</div>
       </div>
       <div class="companion-card" data-companion="alligator">
@@ -329,7 +329,7 @@
           <span aria-hidden="true">&#8592;</span>
           <span>Back to Library</span>
         </button>
-        <div class="kids-avatar" aria-hidden="true">&#128100;</div>
+        <span id="library-title" style="font-weight:600; font-size:16px; color:#2c3e50;"></span>
       </div>
       <div class="kids-search" role="search">
         <input id="kids-search" type="search" placeholder="Search Piggyback Kids" aria-label="Search for a video">
@@ -667,10 +667,33 @@ function showCompanions() {
     document.querySelectorAll('.companion-card').forEach(card => {
         card.onclick = () => {
             saveState({ companion: card.dataset.companion, step: 'library' });
-            // TODO: showLibrary() — coming in Step 4
-            console.log('Companion selected:', card.dataset.companion);
+            showLibrary();
         };
     });
+}
+
+const COMPANION_EMOJI = { pig: '🐷', rabbit: '🐰', alligator: '🐊' };
+
+function showLibrary() {
+    document.getElementById('screen-companions').style.display = 'none';
+    document.getElementById('main-flow').style.display = '';
+
+    const { selected_child, companion } = loadState();
+
+    // Update header: companion emoji + child's first name
+    const emoji = COMPANION_EMOJI[companion] || '🐷';
+    document.getElementById('library-title').textContent =
+        `${emoji} ${selected_child.first_name}'s Videos`;
+
+    // Back button stops any playing video then returns to companion screen
+    document.getElementById('back-button').onclick = () => {
+        if (window.__stopVideo) window.__stopVideo();
+        document.getElementById('main-flow').style.display = 'none';
+        showCompanions();
+    };
+
+    // Load only this child's assigned videos
+    window.__loadScopedVideos(selected_child.child_id);
 }
 
 function showMainFlow() {

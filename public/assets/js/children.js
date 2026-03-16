@@ -1941,6 +1941,30 @@
 
 
 
+    // Expose scoped loader for the learner flow state machine.
+    // Called from children.html after companion selection with a real child_id.
+    // Stops video playback — called by back button when leaving the library/player screen
+    window.__stopVideo = function() {
+        if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
+            ytPlayer.pauseVideo();
+        }
+    };
+
+    window.__loadScopedVideos = async function(childId) {
+        try {
+            const res = await fetch(`/api/learners/children/${encodeURIComponent(childId)}/videos`);
+            const data = await res.json();
+            libraryVideos = Array.isArray(data.videos) ? data.videos : [];
+            applyFilters();
+        } catch (err) {
+            console.error('[Error] loading scoped videos:', err);
+            videoGrid.innerHTML = '<div class="video-empty">Couldn\'t load videos right now.</div>';
+        }
+    };
+
     // Init
     loadConfig();
-    loadVideos();
+    // Only auto-load all videos if NOT in the learner flow (which uses scoped videos per child)
+    if (!sessionStorage.getItem('learnerFlowState')) {
+        loadVideos();
+    }
