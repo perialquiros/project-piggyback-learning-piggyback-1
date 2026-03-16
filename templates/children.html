@@ -161,6 +161,79 @@
     color: #2c3e50;
   }
 
+  /* ── Companion selection screen ── */
+  #screen-companions {
+    min-height: 100vh;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+    padding: 24px;
+  }
+  #screen-companions h1 {
+    font-size: 32px;
+    font-weight: 700;
+    color: #6a1b9a;
+    margin: 0 0 8px 0;
+    text-align: center;
+  }
+  #screen-companions .companions-subtitle {
+    color: #6c757d;
+    font-size: 16px;
+    margin: 0 0 40px 0;
+    text-align: center;
+  }
+  #screen-companions .back-btn {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    background: white;
+    border: none;
+    border-radius: 10px;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #6a1b9a;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  }
+  #screen-companions .back-btn:hover { background: #f3e5f5; }
+  .companions-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 24px;
+    justify-content: center;
+  }
+  .companion-card {
+    background: white;
+    border-radius: 20px;
+    padding: 32px 28px;
+    width: 180px;
+    text-align: center;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.10);
+    transition: transform 0.15s, box-shadow 0.15s;
+  }
+  .companion-card:hover {
+    transform: scale(1.07);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  }
+  .companion-card .companion-emoji {
+    font-size: 64px;
+    margin-bottom: 12px;
+  }
+  .companion-card .companion-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: #2c3e50;
+    margin-bottom: 6px;
+  }
+  .companion-card .companion-desc {
+    font-size: 13px;
+    color: #6c757d;
+  }
+
   /* ── Quiz scoring animation ── */
   @keyframes fadeInOut {
       0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
@@ -194,7 +267,31 @@
     <div class="profiles-grid" id="profiles-grid"></div>
   </div>
 
-  <!-- ── Steps 3-5: Main learning flow (hidden until login) ── -->
+  <!-- ── Step 3: Companion Selection ── -->
+  <div id="screen-companions">
+    <button class="back-btn" id="companions-back-btn">← Back</button>
+    <h1 id="companions-heading">Choose Your Companion</h1>
+    <p class="companions-subtitle">Pick a friend to watch videos with you!</p>
+    <div class="companions-grid">
+      <div class="companion-card" data-companion="pig">
+        <div class="companion-emoji">🐷</div>
+        <div class="companion-name">Penny the Pig</div>
+        <div class="companion-desc">Playful and loves stories</div>
+      </div>
+      <div class="companion-card" data-companion="rabbit">
+        <div class="companion-emoji">🐰</div>
+        <div class="companion-name">Buddy the Bunny</div>
+        <div class="companion-desc">Energetic and fun-loving</div>
+      </div>
+      <div class="companion-card" data-companion="alligator">
+        <div class="companion-emoji">🐊</div>
+        <div class="companion-name">Alex the Alligator</div>
+        <div class="companion-desc">Curious and adventurous</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Steps 4-5: Main learning flow (hidden until login) ── -->
   <main class="kids-page" id="main-flow" style="display:none;">
   
     <!-- Score Tracker -->
@@ -543,16 +640,42 @@ function showProfiles() {
         // On click, save selected child and advance to companion screen (Step 3)
         card.addEventListener('click', () => {
             saveState({ selected_child: child, step: 'companions' });
-            // TODO: showCompanions() — coming in Step 3
-            console.log('Child selected:', child);
+            showCompanions();
         });
         grid.appendChild(card);
     });
 }
 
+function showCompanions() {
+    // Hide profiles, show companion picker
+    document.getElementById('screen-profiles').style.display = 'none';
+    const screen = document.getElementById('screen-companions');
+    screen.style.display = 'flex';
+
+    // Update heading with child's first name
+    const { selected_child } = loadState();
+    document.getElementById('companions-heading').textContent =
+        `Hi ${selected_child.first_name}! Choose Your Companion`;
+
+    // Back goes to profiles screen
+    document.getElementById('companions-back-btn').onclick = () => {
+        screen.style.display = 'none';
+        showProfiles();
+    };
+
+    // Each card click saves companion and moves to library (Step 4)
+    document.querySelectorAll('.companion-card').forEach(card => {
+        card.onclick = () => {
+            saveState({ companion: card.dataset.companion, step: 'library' });
+            // TODO: showLibrary() — coming in Step 4
+            console.log('Companion selected:', card.dataset.companion);
+        };
+    });
+}
+
 function showMainFlow() {
     // Used when advancing past the pre-player screens into the quiz player
-    document.getElementById('screen-profiles').style.display = 'none';
+    document.getElementById('screen-companions').style.display = 'none';
     document.getElementById('main-flow').style.display = '';
 }
 </script>
