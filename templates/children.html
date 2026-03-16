@@ -337,7 +337,72 @@
           <span aria-hidden="true">&#128269;</span>
         </button>
       </div>
+      <button id="parent-report-btn" type="button" onclick="openParentReport()" style="
+        background: linear-gradient(135deg, #6a1b9a, #e91e8c);
+        color: white;
+        border: none;
+        border-radius: 20px;
+        padding: 10px 18px;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        box-shadow: 0 2px 8px rgba(106,27,154,0.3);
+        white-space: nowrap;
+      ">
+        📊 Parent Report
+      </button>
     </header>
+
+    <!-- Parent Report Slide-in Panel -->
+    <div id="parent-report-overlay" style="
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      z-index: 5000;
+    " onclick="closeParentReport(event)">
+      <div id="parent-report-panel" style="
+        position: absolute;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: min(420px, 100vw);
+        background: #f5f5f5;
+        overflow-y: auto;
+        transform: translateX(100%);
+        transition: transform 0.3s ease;
+        display: flex;
+        flex-direction: column;
+      " onclick="event.stopPropagation()">
+        <!-- Panel Header -->
+        <div style="
+          background: linear-gradient(135deg, #6a1b9a, #e91e8c);
+          padding: 20px 24px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          flex-shrink: 0;
+        ">
+          <h2 style="color:white; margin:0; font-size:20px; font-weight:700;">Learning Report</h2>
+          <button onclick="closeParentReport()" style="
+            background: none;
+            border: none;
+            color: white;
+            font-size: 22px;
+            cursor: pointer;
+            line-height: 1;
+            padding: 4px;
+          ">&#10005;</button>
+        </div>
+        <!-- Panel Content -->
+        <div id="parent-report-content" style="padding: 16px; flex: 1;">
+          <div style="text-align:center; color:#6c757d; padding: 40px;">Loading...</div>
+        </div>
+      </div>
+    </div>
 
     <!-- Video library -->
     <div id="video-grid"></div>
@@ -530,6 +595,140 @@ function getChildId() {
 }
 
 console.log('✅ Quiz scoring ready!');
+</script>
+
+<!-- ── Parent Report Panel ── -->
+<script>
+const CATEGORY_META = {
+  character:  { label: 'Character',  icon: '👤' },
+  settings:   { label: 'Setting',    icon: '🏞️' },
+  feeling:    { label: 'Feeling',    icon: '💚' },
+  action:     { label: 'Action',     icon: '⚡' },
+  causal:     { label: 'Causal',     icon: '🔗' },
+  outcome:    { label: 'Outcome',    icon: '🎯' },
+  prediction: { label: 'Prediction', icon: '🔮' },
+};
+
+async function openParentReport() {
+  const overlay = document.getElementById('parent-report-overlay');
+  const panel   = document.getElementById('parent-report-panel');
+  overlay.style.display = 'block';
+  requestAnimationFrame(() => { panel.style.transform = 'translateX(0)'; });
+
+  const state = loadState();
+  const child  = state.selected_child || {};
+  const childId = child.child_id || '';
+  const childName = child.first_name || 'Child';
+  const expertName = state.expert_name || 'Expert';
+
+  const content = document.getElementById('parent-report-content');
+  content.innerHTML = '<div style="text-align:center;color:#6c757d;padding:40px;">Loading...</div>';
+
+  try {
+    const res  = await fetch(`/api/learners/children/${encodeURIComponent(childId)}/report`);
+    const data = await res.json();
+    if (!data.success) throw new Error(data.message || 'Failed to load report');
+    renderParentReport(content, childName, expertName, data);
+  } catch (err) {
+    content.innerHTML = `<div style="text-align:center;color:#dc3545;padding:40px;">Could not load report.<br><small>${err.message}</small></div>`;
+  }
+}
+
+function closeParentReport(e) {
+  if (e && e.target !== document.getElementById('parent-report-overlay')) return;
+  const panel = document.getElementById('parent-report-panel');
+  panel.style.transform = 'translateX(100%)';
+  setTimeout(() => { document.getElementById('parent-report-overlay').style.display = 'none'; }, 300);
+}
+// Also allow close button (no event arg)
+const _origClose = closeParentReport;
+window.closeParentReport = function(e) {
+  if (!e) {
+    const panel = document.getElementById('parent-report-panel');
+    panel.style.transform = 'translateX(100%)';
+    setTimeout(() => { document.getElementById('parent-report-overlay').style.display = 'none'; }, 300);
+  } else {
+    _origClose(e);
+  }
+};
+
+function renderParentReport(container, childName, expertName, data) {
+  const score = Math.round(data.overall_score || 0);
+  const attempts = data.total_attempts || 0;
+  const categories = data.top_categories || [];
+  const recentVideos = data.recent_videos || [];
+
+  const scoreColor = score >= 80 ? '#4caf50' : score >= 60 ? '#ff9800' : '#f44336';
+
+  let categoriesHtml = '';
+  if (categories.length === 0) {
+    categoriesHtml = '<p style="color:#6c757d;font-size:14px;">No category data yet.</p>';
+  } else {
+    categoriesHtml = categories.map(cat => {
+      const meta = CATEGORY_META[cat.type] || { label: cat.type, icon: '📌' };
+      const pct = cat.score;
+      return `
+        <div style="margin-bottom:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <span style="font-size:14px;font-weight:600;color:#2c3e50;">${meta.icon} ${meta.label}</span>
+            <span style="font-size:14px;color:#6c757d;">${pct}/100</span>
+          </div>
+          <div style="background:#e9ecef;border-radius:6px;height:10px;overflow:hidden;">
+            <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#6a1b9a,#e91e8c);border-radius:6px;transition:width 0.6s ease;"></div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  let recentHtml = '';
+  if (recentVideos.length > 0) {
+    recentHtml = `
+      <div style="background:white;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px;">
+        <h3 style="margin:0 0 12px;font-size:15px;font-weight:700;color:#2c3e50;">Recent Videos</h3>
+        ${recentVideos.map(v => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0;">
+            <span style="font-size:13px;color:#2c3e50;flex:1;margin-right:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${v.video_title || v.video_id}</span>
+            <span style="font-size:13px;font-weight:700;color:${v.percentage>=80?'#4caf50':v.percentage>=60?'#ff9800':'#f44336'};flex-shrink:0;">${v.percentage}%</span>
+          </div>`).join('')}
+      </div>`;
+  }
+
+  container.innerHTML = `
+    <!-- Child card -->
+    <div style="background:white;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px;display:flex;align-items:center;gap:14px;">
+      <div style="width:52px;height:52px;border-radius:50%;background:linear-gradient(135deg,#9c27b0,#e91e8c);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <span style="font-size:24px;">👤</span>
+      </div>
+      <div>
+        <div style="font-size:17px;font-weight:700;color:#2c3e50;">${childName}</div>
+        <div style="font-size:13px;color:#6c757d;">Supervised by ${expertName}</div>
+      </div>
+    </div>
+
+    <!-- Overall score -->
+    <div style="background:${scoreColor};border-radius:12px;padding:24px;text-align:center;margin-bottom:12px;box-shadow:0 2px 8px rgba(0,0,0,0.12);">
+      <div style="font-size:52px;font-weight:800;color:white;line-height:1;">${score}%</div>
+      <div style="font-size:15px;color:rgba(255,255,255,0.9);margin-top:4px;">Overall Score</div>
+    </div>
+
+    <!-- Quiz attempts -->
+    <div style="background:white;border-radius:12px;padding:16px 20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <div style="font-size:15px;font-weight:700;color:#2c3e50;">Quiz Attempts</div>
+        <div style="font-size:13px;color:#6c757d;">Total completed</div>
+      </div>
+      <div style="font-size:36px;font-weight:800;color:#6a1b9a;">${attempts}</div>
+    </div>
+
+    <!-- Category scores -->
+    <div style="background:white;border-radius:12px;padding:16px 20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px;">
+      <h3 style="margin:0 0 16px;font-size:15px;font-weight:700;color:#2c3e50;">Category Scores</h3>
+      ${categoriesHtml}
+    </div>
+
+    ${recentHtml}
+  `;
+}
 </script>
 
 <!-- ── Learner Flow State Machine ── -->

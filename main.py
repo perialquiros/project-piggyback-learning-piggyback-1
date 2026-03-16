@@ -172,6 +172,27 @@ async def learner_list_children_for_expert(expert_id: str):
     )
 
 
+@app.get("/api/learners/children/{child_id}/report")
+async def learner_child_report(child_id: str):
+    from app.services.report_service import get_child_report
+    from app.services.quiz_scoring_service import get_child_scores
+
+    report = get_child_report(child_id)
+    scores = get_child_scores(child_id)
+
+    overall_score = scores.get("overall_percentage", 0) if scores.get("success") else 0
+    total_attempts = scores.get("total_attempts", 0) if scores.get("success") else 0
+
+    return JSONResponse({
+        "success": True,
+        "child_id": child_id,
+        "overall_score": overall_score,
+        "total_attempts": total_attempts,
+        "top_categories": report["summary"]["top_categories"],
+        "recent_videos": report["summary"]["recent_scores"],
+    })
+
+
 @app.get("/api/learners/children/{child_id}/videos")
 async def learner_list_videos_for_child(child_id: str):
     # Child inherits expert video permissions (no child-video table in this phase).
