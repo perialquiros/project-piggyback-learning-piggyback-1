@@ -31,4 +31,4 @@ data/
 *.db
 report.html
 pytest_report.html
-assets/
+assets/style.css
