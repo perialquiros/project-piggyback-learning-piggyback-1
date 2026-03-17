@@ -454,6 +454,54 @@ async def expert_edit_questions_page(request: Request, video_id: str):
     })
 
 
+@app.get("/api/expert/video/{video_id}/persona-variants")
+async def get_persona_variants_for_video(request: Request, video_id: str):
+    """Load saved persona variant questions for a video."""
+    try:
+        require_expert_session(request)
+        require_expert_video_access(request, video_id, auto_claim=False)
+    except HTTPException as exc:
+        return JSONResponse({"success": False, "message": exc.detail}, status_code=exc.status_code)
+
+    path = DOWNLOADS_DIR / video_id / "persona_variants" / "persona_variants.json"
+    if not path.exists():
+        return JSONResponse({"success": True, "data": {}})
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    return JSONResponse({"success": True, "data": data})
+
+
+@app.post("/api/expert/video/{video_id}/persona-variants")
+async def save_persona_variants_for_video(request: Request, video_id: str, payload: Dict[str, Any] = Body(...)):
+    """Save or update persona variant questions for one or more segments of a video."""
+    try:
+        require_expert_session(request)
+        require_expert_video_access(request, video_id, auto_claim=False)
+    except HTTPException as exc:
+        return JSONResponse({"success": False, "message": exc.detail}, status_code=exc.status_code)
+
+    folder = DOWNLOADS_DIR / video_id / "persona_variants"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / "persona_variants.json"
+
+    # Load existing data and merge
+    existing = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {"videoId": video_id, "segments": {}}
+    existing.setdefault("segments", {})
+
+    incoming = payload.get("segments", {})
+    for seg_key, seg_data in incoming.items():
+        if seg_key not in existing["segments"]:
+            existing["segments"][seg_key] = {}
+        if "persona_variants" in seg_data:
+            existing["segments"][seg_key]["persona_variants"] = seg_data["persona_variants"]
+        if "persona_winners" in seg_data:
+            existing["segments"][seg_key]["persona_winners"] = seg_data["persona_winners"]
+
+    existing["updatedAt"] = datetime.now(timezone.utc).isoformat()
+    path.write_text(json.dumps(existing, indent=2, ensure_ascii=False), encoding="utf-8")
+    return JSONResponse({"success": True})
+
+
 @app.get("/api/expert/video/{video_id}/final-questions")
 async def get_final_questions_for_edit(request: Request, video_id: str):
     """Returns the full raw final_questions.json so the expert can re-edit all questions."""

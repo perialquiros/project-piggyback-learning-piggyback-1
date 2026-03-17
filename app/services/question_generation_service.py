@@ -659,13 +659,12 @@ def generate_persona_variants(
     )
 
     try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+        response = OPENAI_CLIENT.chat.completions.create(
+            model="gpt-4o-mini",
             max_tokens=2000,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = response.content[0].text.strip() if response.content else ""
+        text = response.choices[0].message.content.strip() if response.choices else ""
         parsed = _maybe_parse_json(text)
         if not isinstance(parsed, dict):
             return {"success": False, "message": "Invalid AI response format"}

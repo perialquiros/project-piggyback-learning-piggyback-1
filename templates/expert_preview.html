@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <title>Expert Preview - Video Question Review</title>
-    <link rel="stylesheet" href="/assets/css/expert_preview.css">
+    <link rel="stylesheet" href="/assets/css/expert_preview.css?v=2">
 </head>
 <body data-selected-video-id="{{ (selected_video_id or '') | e }}">
     <div class="container">
@@ -287,93 +287,32 @@
         </div>
         <div class="step-content" id="step-3" data-step="3">
             <div class="review-card">
-                <h2>Review Questions</h2>
-                <p class="selection-help">Inspect each segment and its questions before sharing them with learners.</p>
-                <div class="review-meta">
-                    <div><strong>Video:</strong> <span id="review-video-id">Not selected</span></div>
-                    <div><strong>Total segments:</strong> <span id="review-total-segments">0</span></div>
-                
-                </div>
-                <div class="review-control-panel" id="review-control-panel" style="display: none;">
-                    <div class="review-control-heading">
-                        <h4>LLM Quick Tools</h4>
-                        <span id="review-control-lock-status" class="review-control-lock"></span>
+                <div class="review-card-header-row">
+                    <div class="review-card-header-left">
+                        <h2>Review Questions</h2>
+                        <p class="selection-help">Inspect each segment and its questions before sharing them with learners.</p>
+                        <div class="review-meta">
+                            <div><strong>Video:</strong> <span id="review-video-id">Not selected</span></div>
+                            <div><strong>Total segments:</strong> <span id="review-total-segments">0</span></div>
+                        </div>
                     </div>
-                    <p id="review-control-status">Load a segment to unlock AI question controls.</p>
-                    <div class="review-control-row">
-                        <label for="review-control-segment-select">Segment</label>
-                        <select id="review-control-segment-select"></select>
-                        <span id="review-control-question-type" class="review-control-type"></span>
-                    </div>
-                    <div class="review-control-actions">
-                        <button type="button" class="btn btn-secondary btn-sm" id="review-control-skip-btn">Skip current segment</button>
-                        <button type="button" class="btn btn-secondary btn-sm" id="review-control-toggle-edit-btn">Toggle inline edit</button>
-                        <button type="button" class="btn btn-success btn-sm" id="review-control-save-inline-btn">Save &amp; Close</button>
-                        <button type="button" class="btn btn-success btn-sm" id="review-control-save-modal-btn">Save via modal helper</button>
-                        <button type="button" class="btn btn-secondary btn-sm" id="review-control-trash-btn">Trash question</button>
-                        <button type="button" class="btn btn-secondary btn-sm" id="review-control-restore-btn">Restore question</button>
-                        <button type="button" class="btn btn-secondary btn-sm" id="review-control-expert-best-btn">Mark as expert best</button>
-                        <button type="button" class="btn btn-secondary btn-sm" id="review-control-start-modal-edit-btn">Start modal edit</button>
-                        <button type="button" class="btn btn-secondary btn-sm" id="review-control-cancel-modal-edit-btn">Cancel modal edit</button>
-                    </div>
-                    <div class="review-control-editor" id="review-control-editor"></div>
-                </div>
-
-                <div class="review-questions-list" id="review-questions-list">
-
-    <div class="segment-block">
-
-        <div class="segment-header">
-            Segment 1 (00:00 - 00:59)
-        </div>
-
-        <div class="questions-grid">
-
-            <!-- EXPERT -->
-            <div class="question-column expert-column">
-                <div class="column-header">Expert Questions</div>
-
-                <div class="editable-question">
-                    <div class="question-type-label">SETTING</div>
-
-                    <div class="question-preview">
-                        Where does the story happen?
-                    </div>
-
-                    <div class="answer-preview">
-                        At a water park.
+                    <div class="review-card-header-right">
+                        <div style="display:flex;gap:10px;align-items:center;">
+                            <button class="btn-characterize" id="btn-characterize" onclick="characterizeAllQuestions()" disabled>
+                                🔄 Characterize
+                            </button>
+                            <button class="btn-review-edit" id="btn-open-edit-page" onclick="openEditPage()" disabled>Edit</button>
+                        </div>
+                        <div class="characterize-status" id="characterize-status"></div>
                     </div>
                 </div>
 
-            </div>
-
-            <!-- BUNNY -->
-            <div class="question-column llm-column">
-                <div class="column-header">🐰 Bunny Questions</div>
-            </div>
-
-            <!-- ALLIGATOR -->
-            <div class="question-column llm-column">
-                <div class="column-header">🐊 Alligator Questions</div>
-            </div>
-
-            <!-- PIG -->
-            <div class="question-column llm-column">
-                <div class="column-header">🐷 Pig Questions</div>
-            </div>
-
-        </div>
-
-    </div>
-
-</div>
-                
-                
+                <div class="review-questions-list" id="review-questions-list"></div>
             </div>
         </div>
 
     </div>
-<script src="/assets/js/expert_preview.js?v=2" defer></script>
+<script src="/assets/js/expert_preview.js?v=3" defer></script>
 </body>
 </html>
 
