@@ -829,6 +829,12 @@ function renderChildrenTable() {
                         </option>
                     `).join('')}
                 </select>
+
+                <select data-role="child-interaction-mode">
+                    <option value="flexible" ${child.interaction_mode === 'flexible' ? 'selected' : ''}>Flexible</option>
+                    <option value="strict" ${child.interaction_mode === 'strict' ? 'selected' : ''}>Strict</option>
+                    <option value="passive" ${child.interaction_mode === 'passive' ? 'selected' : ''}>Passive</option>
+                </select>
             </td>
             <td>${child.is_active ? 'Active' : 'Inactive'}</td>
             <td>
@@ -932,11 +938,12 @@ async function handleCreateChild(event) {
         const first_name = (document.getElementById('child-first-name')?.value || '').trim();
         const last_name = (document.getElementById('child-last-name')?.value || '').trim();
         const icon_key = (document.getElementById('child-icon-key')?.value || '').trim().toLowerCase();
+        const interaction_mode = (document.getElementById('child-interaction-mode')?.value || 'flexible').trim().toLowerCase();
 
         const res = await fetch('/api/admin/children', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ expert_id, first_name, last_name, icon_key }),
+            body: JSON.stringify({ expert_id, first_name, last_name, icon_key, interaction_mode }),
         });
         const data = await res.json();
         if (!res.ok || !data.success) {
@@ -959,6 +966,7 @@ async function handleSaveChild(row) {
             first_name: (row.querySelector('[data-role="child-first-name"]')?.value || '').trim(),
             last_name: (row.querySelector('[data-role="child-last-name"]')?.value || '').trim(),
             icon_key: (row.querySelector('[data-role="child-icon-key"]')?.value || '').trim().toLowerCase(),
+            interaction_mode: (row.querySelector('[data-role="child-interaction-mode"]')?.value || 'flexible').trim().toLowerCase(),
             is_active: row.dataset.active === '1',
         };
         const linkSelect = row.querySelector('[data-role="child-link-expert"]');

@@ -509,6 +509,7 @@ async def api_admin_create_child(payload: Dict[str, Any] = Body(...)):
     first_name = str(payload.get("first_name") or "").strip()
     last_name = str(payload.get("last_name") or "").strip()
     icon_key = str(payload.get("icon_key") or "").strip().lower()
+    interaction_mode = str(payload.get("interaction_mode") or "flexible").strip().lower()
 
     try:
         child = create_child(
@@ -516,6 +517,7 @@ async def api_admin_create_child(payload: Dict[str, Any] = Body(...)):
             first_name=first_name,
             last_name=last_name,
             icon_key=icon_key,
+            interaction_mode=interaction_mode,
         )
         return {"success": True, "child": child}
     except ValueError as exc:
@@ -532,6 +534,7 @@ async def api_admin_update_child(child_id: str, payload: Dict[str, Any] = Body(.
     first_name = payload.get("first_name")
     last_name = payload.get("last_name")
     icon_key = payload.get("icon_key")
+    interaction_mode = payload.get("interaction_mode")
     is_active = payload.get("is_active")
 
     if expert_id is not None:
@@ -540,6 +543,8 @@ async def api_admin_update_child(child_id: str, payload: Dict[str, Any] = Body(.
         first_name = str(first_name)
     if last_name is not None:
         last_name = str(last_name)
+    if interaction_mode is not None:
+        interaction_mode = str(interaction_mode).strip().lower()
     if icon_key is not None:
         icon_key = str(icon_key)
     if is_active is not None and not isinstance(is_active, bool):
@@ -552,6 +557,7 @@ async def api_admin_update_child(child_id: str, payload: Dict[str, Any] = Body(.
             first_name=first_name,
             last_name=last_name,
             icon_key=icon_key,
+            interaction_mode=interaction_mode,
             is_active=is_active,
         )
     except ValueError as exc:

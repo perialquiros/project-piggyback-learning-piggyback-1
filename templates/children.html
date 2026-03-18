@@ -241,6 +241,11 @@
       80% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
       100% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
   }
+
+  /* Hide Skip Button in Strict Mode */
+  body[data-interaction-mode="strict"] #skip-answer-btn {
+      display: none !important;
+  }
   </style>
 </head>
 
@@ -478,7 +483,10 @@ function startQuizTracking(videoId, expectedQuestions = 2) {
     quizScore.total = 0;
     quizScore.expectedQuestions = expectedQuestions;
     quizScore.details = [];
-    document.getElementById('scoreTracker').style.display = 'block';
+    const isPassive = document.body.dataset.interactionMode === 'passive';
+    if (!isPassive) {
+        document.getElementById('scoreTracker').style.display = 'block';
+    }
     updateScoreDisplay();
     console.log('Quiz started:', videoId);
 }
@@ -496,6 +504,25 @@ function recordAnswer(question, expectedAnswer, userAnswer, status, similarity, 
         quizScore.wrong++;
     }
     quizScore.total++;
+    updateScoreDisplay();
+
+
+    // Rewind on Wrong Answer (Strict Mode)
+    if (status !== 'correct' && document.body.dataset.interactionMode === 'strict') {
+        console.log("Strict mode: Answer incorrect, rewinding...");
+        if (window.player && typeof window.player.seekTo === 'function' && typeof window.player.getCurrentTime === 'function') {
+            const rewindTo = Math.max(0, window.player.getCurrentTime() - 10);
+            window.player.seekTo(rewindTo, true);
+            window.player.playVideo(); // Forcing playback to resume
+
+            // Hide the question UI so the child can watch the segment again
+            const qBox = document.getElementById('question-box');
+            const blocker = document.getElementById('blocker');
+            if (qBox) qBox.style.display = 'none';
+            if (blocker) blocker.style.display = 'none';
+        }
+    }
+
     quizScore.details.push({
         question: question,
         expectedAnswer: expectedAnswer,
@@ -505,7 +532,6 @@ function recordAnswer(question, expectedAnswer, userAnswer, status, similarity, 
         question_type: questionType || null,
         timestamp: new Date().toISOString()
     });
-    updateScoreDisplay();
     showQuickFeedback(status);
     if (quizScore.total >= quizScore.expectedQuestions) {
         setTimeout(() => showFinalScore(), 1500);
@@ -513,10 +539,11 @@ function recordAnswer(question, expectedAnswer, userAnswer, status, similarity, 
 }
 
 function showQuickFeedback(status) {
+    const isStrict = document.body.dataset.interactionMode === 'strict';
     const messages = {
         'correct': { emoji: '🐷', text: 'Correct!', color: '#28a745' },
         'almost': { emoji: '🐷', text: 'Close!', color: '#ffc107' },
-        'wrong': { emoji: '🐷', text: 'Keep trying!', color: '#dc3545' }
+        'wrong': { emoji: '🐷', text: isStrict ? 'Keep trying!' : 'Keep going!', color: '#dc3545' }
     };
     const feedback = messages[status] || messages['wrong'];
     const el = document.createElement('div');
@@ -889,6 +916,9 @@ function showLibrary() {
     const emoji = COMPANION_EMOJI[companion] || '🐷';
     document.getElementById('library-title').textContent =
         `${emoji} ${selected_child.first_name}'s Videos`;
+
+    // Set the interaction mode on the body to enable CSS/JS logic
+    document.body.dataset.interactionMode = selected_child.interaction_mode || 'flexible';
 
     // Back button stops any playing video then returns to companion screen
     document.getElementById('back-button').onclick = () => {
