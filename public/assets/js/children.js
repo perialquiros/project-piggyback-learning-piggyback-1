@@ -67,10 +67,16 @@
       "Awesome work!",
       "You nailed it!"
     ];
-    const BORDERLINE_FEEDBACK = [
-      "Almost! Let's watch it again."
-    ];
-    const RETRY_FEEDBACK = "I think we missed it. Let's watch it again.";
+    function getBorderlineFeedback() {
+      const isStrict = document.body.dataset.interactionMode === 'strict';
+      return isStrict ? "Almost! Let's watch it again." : "Almost! Let's keep going!";
+    }
+    
+    function getRetryFeedback() {
+      const isStrict = document.body.dataset.interactionMode === 'strict';
+      return isStrict ? "I think we missed it. Let's watch it again." : "That's okay! Let's keep going!";
+    }
+    const wrongAttempted = new Set();
 
     // ===============================
     // Global State
@@ -713,8 +719,15 @@
 
     if (skipAnswerBtn) {
       skipAnswerBtn.addEventListener("click", () => {
+        const isStrictMode = document.body.dataset.interactionMode === "strict";
+    
+        // disable skipping in strict mode
+        if (isStrictMode) return;
         hideQuestionActions();
+    
         if (currentQuestionContext) {
+          const quesSec = toSeconds(currentQuestionContext.q.ques_time);
+          asked.add(quesSec);
           setPlayerTime(currentQuestionContext.segStart);
         }
         resumeVideo();
@@ -911,6 +924,7 @@
       }
 
       asked.clear();
+      wrongAttempted.clear();
       previousTime = 0;
       maxAllowedTime = 0;
       skipLockBypass = false;
@@ -998,6 +1012,11 @@
         }
 
         // --- Question Triggers ---
+        if (document.body.dataset.interactionMode === 'passive') {
+          previousTime = currentTime;
+          return;
+        }
+
         for (const segment of segments) {
           const segStart = segment.segment_start || 0;
           const segEnd = segment.segment_end && segment.segment_end > segStart
@@ -1797,36 +1816,62 @@
           return;
         }
 
+        const isStrictMode = document.body.dataset.interactionMode === "strict";
+
         const rewindTo = askedInSegment.length > 0
           ? Math.max(...askedInSegment) + 1
           : segStart;
 
+// ----------------------
+// ALMOST CASE
+// ----------------------
         if (status === "almost") {
-          const almostMessage = BORDERLINE_FEEDBACK[0] || "Almost! Let's watch it again.";
+          const almostMessage = getBorderlineFeedback();
 
           await deliverFeedback({
             message: almostMessage,
             color: "#d97706",
             minVisibleMs: MIN_FEEDBACK_DISPLAY_MS
           });
+          
+          if (!wrongAttempted.has(quesSec)) {
+            wrongAttempted.add(quesSec);
+            tryRecordAnswer(q.question, q.answer, spoken, "almost", sim, q.question_type);
+          }
 
-          tryRecordAnswer(q.question, q.answer, spoken, "almost", sim, q.question_type);
+          if (isStrictMode) {
+            setPlayerTime(rewindTo);
+          }
 
-          setPlayerTime(rewindTo);
+          asked.delete(quesSec);
           await wait(200);
           resumeVideo();
           return;
         }
 
+// ----------------------
+// WRONG CASE
+// ----------------------
         await deliverFeedback({
-          message: RETRY_FEEDBACK,
+          message: getRetryFeedback(),
           color: "#ef4444",
           minVisibleMs: MIN_FEEDBACK_DISPLAY_MS
         });
 
-        tryRecordAnswer(q.question, q.answer, spoken, "wrong", sim, q.question_type);
+        if (!wrongAttempted.has(quesSec)) {
+          wrongAttempted.add(quesSec);
+          tryRecordAnswer(q.question, q.answer, spoken, "wrong", sim, q.question_type);
+        }
+        if (isStrictMode) {
+  // STRICT MODE = rewind and retry
+          setPlayerTime(rewindTo);
+  // allow question to trigger again
+          asked.delete(quesSec);
+        } else {
+  // FLEXIBLE MODE = continue video
+          asked.add(quesSec);
+        }
 
-        setPlayerTime(rewindTo);
         await wait(200);
         resumeVideo();
       } catch (err) {
