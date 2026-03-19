@@ -346,7 +346,7 @@ Return JSON only (no extra text) in this structure:
                         return None
                     
                     claude_client = anthropic.Anthropic()
-                    model_name = os.getenv("ANTHROPIC_API_KEY", "claude-opus-4-6")
+                    model_name = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 
                     # Load Claude prompt
                     prompt_text = ""
@@ -372,7 +372,7 @@ Return JSON only (no extra text) in this structure:
                     
                     # Get Claude response
                     resp = claude_client.messages.create(
-                        model="claude-opus-4-6",
+                        model=model_name,
                         max_tokens=1024,
                         messages=[{"role": "user", "content": parts}]
                     )

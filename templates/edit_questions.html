@@ -513,6 +513,7 @@ async function saveAll() {
             };
         });
 
+        // Save persona variants
         const res  = await fetch(`/api/expert/video/${VIDEO_ID}/persona-variants`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -520,7 +521,35 @@ async function saveAll() {
         });
         const json = await res.json();
         if (!json.success) throw new Error(json.message);
-        showStatus('Saved successfully!', 'success');
+
+        // Also finalize — fetch existing final_questions to preserve aiQuestions
+        const existingFqRes = await fetch(`/api/expert/video/${VIDEO_ID}/final-questions`);
+        const existingFq    = await existingFqRes.json();
+        const existingSegs  = (existingFq.success && existingFq.data?.segments) ? existingFq.data.segments : [];
+        const existingByRange = {};
+        existingSegs.forEach(s => { existingByRange[`${s.start}-${s.end}`] = s; });
+
+        const finalQuestions = {
+            segments: segmentsData.map(seg => {
+                const existing = existingByRange[`${seg.start}-${seg.end}`] || {};
+                return {
+                    start:            seg.start,
+                    end:              seg.end,
+                    aiQuestions:      existing.aiQuestions || seg.aiQuestions || [],
+                    persona_variants: seg.persona_variants || {},
+                    persona_winners:  seg.persona_winners  || {},
+                };
+            })
+        };
+        const fqRes  = await fetch('/api/save-final-questions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ videoId: VIDEO_ID, data: finalQuestions })
+        });
+        const fqJson = await fqRes.json();
+        if (!fqJson.success) throw new Error(fqJson.message);
+
+        showStatus('Saved & finalized!', 'success');
     } catch (e) {
         showStatus(`Save failed: ${e.message}`, 'error');
     } finally {

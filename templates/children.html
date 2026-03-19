@@ -219,8 +219,10 @@
     transform: scale(1.07);
     box-shadow: 0 8px 24px rgba(0,0,0,0.18);
   }
-  .companion-card .companion-emoji {
-    font-size: 64px;
+  .companion-img {
+    width: 96px;
+    height: 96px;
+    object-fit: contain;
     margin-bottom: 12px;
   }
   .companion-card .companion-name {
@@ -279,17 +281,17 @@
     <p class="companions-subtitle">Pick a friend to watch videos with you!</p>
     <div class="companions-grid">
       <div class="companion-card" data-companion="pig">
-        <div class="companion-emoji">🐷</div>
-        <div class="companion-name">Peppa the Pig</div>
+        <img class="companion-img" src="/assets/companions/pig.png" alt="Pig">
+        <div class="companion-name">Pippa the Pig</div>
         <div class="companion-desc">Playful and loves stories</div>
       </div>
       <div class="companion-card" data-companion="rabbit">
-        <div class="companion-emoji">🐰</div>
+        <img class="companion-img" src="/assets/companions/bunny.png" alt="Bunny">
         <div class="companion-name">Judy the Bunny</div>
         <div class="companion-desc">Energetic and fun-loving</div>
       </div>
       <div class="companion-card" data-companion="alligator">
-        <div class="companion-emoji">🐊</div>
+        <img class="companion-img" src="/assets/companions/aligator.png" alt="Alligator">
         <div class="companion-name">Alex the Alligator</div>
         <div class="companion-desc">Curious and adventurous</div>
       </div>
@@ -431,7 +433,8 @@
           <div id="blocker" aria-hidden="true"></div>
           <div id="question-box" role="dialog" aria-live="assertive" aria-labelledby="question" aria-describedby="timestamp feedback">
             <div class="question-character">
-              <video src="/assets/asking_question.webm" autoplay loop muted playsinline></video>
+              <video id="companion-video" src="/assets/asking_question.webm" autoplay loop muted playsinline></video>
+              <img id="companion-img" src="" alt="Companion" class="companion-speaking" style="display:none;">
             </div>
             <div class="question-bubble">
               <h3 id="question"></h3>
