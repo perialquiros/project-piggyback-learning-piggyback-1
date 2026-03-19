@@ -279,7 +279,7 @@ async def verify_password(
     user_type: str = Form(...), password: str = Form(...)
 ):
     """Verify password for admin access (expert uses ID+password endpt)"""
-    if user_type == "admin" and password == ADMIN_PASSWORD:
+    if user_type == "admin" and password.strip().lower() == ADMIN_PASSWORD.strip().lower():
         return JSONResponse({"success": True, "redirect": "/admin"})
 
     if user_type == "expert":
