@@ -915,8 +915,9 @@
       maxAllowedTime = 0;
       skipLockBypass = false;
 
-      // Load matching questions
-      fetch(`/api/final-questions/${encodeURIComponent(video.video_id)}?nocache=${Date.now()}`)
+      // Load matching questions (pass companion so backend can return persona-specific questions)
+      const _companion = (typeof loadState === 'function' ? loadState().companion : '') || '';
+      fetch(`/api/final-questions/${encodeURIComponent(video.video_id)}?companion=${encodeURIComponent(_companion)}&nocache=${Date.now()}`)
         .then(res => res.json())
         .then(data => {
           if (!data.success) throw new Error(data.error || "Missing final questions");
