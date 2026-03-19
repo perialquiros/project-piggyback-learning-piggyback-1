@@ -5,13 +5,13 @@ from typing import Any, Dict, List, Optional
 from app.services.expert_auth_service import normalize_expert_id
 from app.services.sqlite_store import get_conn
 
+# Fixed icon picker options allowed by backend/API validation.
 ALLOWED_CHILD_ICON_KEYS = (
     "pig",
     "fox",
     "owl",
     "cat",
     "bear",
-    "alligator",
     "rabbit",
     "lion",
     "penguin",
@@ -71,7 +71,7 @@ def _child_id_exists(child_id: str) -> bool:
         ).fetchone()
     return row is not None
 
-
+# Generate a 6-digit child ID and retry on rare collisions.
 def generate_child_id() -> str:
     for _ in range(MAX_CHILD_ID_RETRIES):
         candidate = f"{secrets.randbelow(1_000_000):06d}"
@@ -89,7 +89,7 @@ def get_child(child_id: str, include_inactive: bool = True) -> Optional[Dict[str
         SELECT c.child_id, c.expert_id, c.first_name, c.last_name, c.icon_key,
                c.interaction_mode, c.is_active, c.created_at, c.updated_at, e.display_name AS expert_name
         FROM children c
-        LEFT JOIN experts e ON e.expert_id = c.expert_id
+        JOIN experts e ON e.expert_id = c.expert_id
         WHERE c.child_id = ?
     """
     params: List[Any] = [child_id]
@@ -132,9 +132,9 @@ def list_children(
             SELECT c.child_id, c.expert_id, c.first_name, c.last_name, c.icon_key, c.interaction_mode,
                    c.is_active, c.created_at, c.updated_at, e.display_name AS expert_name
             FROM children c
-            LEFT JOIN experts e ON e.expert_id = c.expert_id
+            JOIN experts e ON e.expert_id = c.expert_id
             {where_sql}
-            ORDER BY lower(COALESCE(c.expert_id, '')), lower(c.last_name), lower(c.first_name), c.child_id
+            ORDER BY lower(c.expert_id), lower(c.last_name), lower(c.first_name), c.child_id
             """,
             tuple(values),
         ).fetchall()
@@ -142,6 +142,7 @@ def list_children(
     return [_row_to_child(row) for row in rows]
 
 
+# Each child must belong to an existing expert.
 def create_child(
     expert_id: str,
     first_name: str,
@@ -168,7 +169,8 @@ def create_child(
 
     now = utc_now_iso()
     child_id = generate_child_id()
-
+    
+# DB unique index prevents duplicate first+last name under the same expert.
     try:
         with get_conn() as conn:
             conn.execute(
@@ -197,7 +199,6 @@ def create_child(
 
 def update_child(
     child_id: str,
-    expert_id: Optional[str] = None,
     first_name: Optional[str] = None,
     last_name: Optional[str] = None,
     icon_key: Optional[str] = None,
@@ -210,17 +211,6 @@ def update_child(
 
     updates: List[str] = []
     values: List[Any] = []
-
-    if expert_id is not None:
-        normalized_expert_id = normalize_expert_id(expert_id)
-        if normalized_expert_id:
-            _ensure_expert_exists(normalized_expert_id)
-            updates.append("expert_id = ?")
-            values.append(normalized_expert_id)
-        else:
-            # empty value means unlink child from expert
-            updates.append("expert_id = ?")
-            values.append(None)
 
     if first_name is not None:
         cleaned_first = normalize_name(first_name)
@@ -277,17 +267,16 @@ def update_child(
         return None
     return get_child(child_id)
 
-
+# Soft-delete behavior: mark inactive instead of deleting. (might be changed later since we are hard coding it to 60 students/learners)
 def deactivate_child(child_id: str) -> Optional[Dict[str, Any]]:
     return update_child(child_id, is_active=False)
 
 
 def delete_child(child_id: str) -> bool:
-    """Permanently delete a child record from the database."""
     child_id = normalize_child_id(child_id)
     if not child_id:
         return False
     with get_conn() as conn:
         cur = conn.execute("DELETE FROM children WHERE child_id = ?", (child_id,))
         conn.commit()
-        return cur.rowcount > 0
+    return cur.rowcount > 0
