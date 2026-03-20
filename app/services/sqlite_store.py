@@ -26,6 +26,13 @@ def _children_needs_unlink_migration(conn: sqlite3.Connection) -> bool:
     return False
 
 
+def _migrate_drop_unique_name_index(conn: sqlite3.Connection) -> None:
+    indexes = {row["name"] for row in conn.execute("PRAGMA index_list(children)").fetchall()}
+    if "idx_children_unique_profile_per_expert" in indexes:
+        conn.execute("DROP INDEX idx_children_unique_profile_per_expert")
+        conn.commit()
+
+
 def _migrate_add_interaction_mode(conn: sqlite3.Connection) -> None:
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(children)").fetchall()}
     if "interaction_mode" not in cols:
@@ -75,12 +82,6 @@ def _migrate_children_for_unlink(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_children_active_expert
             ON children (expert_id, is_active);
 
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_children_unique_profile_per_expert
-            ON children (
-                expert_id,
-                lower(trim(first_name)),
-                lower(trim(last_name))
-            );
         """
     )
     conn.execute("PRAGMA foreign_keys = ON;")
@@ -172,12 +173,6 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_children_active_expert
                 ON children (expert_id, is_active);            
             
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_children_unique_profile_per_expert
-        ON children (
-                expert_id,
-                lower(trim(first_name)),
-                lower(trim(last_name))
-            );
 
 
             """
@@ -187,4 +182,5 @@ def init_db() -> None:
         )
         _migrate_children_for_unlink(conn)
         _migrate_add_interaction_mode(conn)
+        _migrate_drop_unique_name_index(conn)
         conn.commit()
