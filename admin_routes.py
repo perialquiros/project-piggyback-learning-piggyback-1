@@ -553,7 +553,6 @@ async def api_admin_update_child(child_id: str, payload: Dict[str, Any] = Body(.
     try:
         child = update_child(
             child_id=child_id,
-            expert_id=expert_id,
             first_name=first_name,
             last_name=last_name,
             icon_key=icon_key,

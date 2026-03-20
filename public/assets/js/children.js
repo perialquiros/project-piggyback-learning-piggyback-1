@@ -1448,23 +1448,21 @@
         prefetchUpcomingQuestions(currentIndex + 1);
       }
 
-      // Swap companion character based on selected companion
+      // Swap companion webm based on selected companion
       const _companion = (typeof loadState === 'function' ? loadState().companion : '') || 'pig';
       const _compVideo = document.getElementById('companion-video');
-      const _compImg = document.getElementById('companion-img');
-      const COMPANION_IMGS = {
-        pig: '/assets/companions/pig.png',
-        rabbit: '/assets/companions/bunny.png',
-        alligator: '/assets/companions/aligator.png',
+      const COMPANION_WEBMS = {
+        pig:       '/assets/Pig_updated.webm',
+        rabbit:    '/assets/Bunny_video.webm',
+        alligator: '/assets/aligator_video.webm',
       };
-      if (_companion === 'pig') {
-        _compVideo.style.display = 'block';
-        _compImg.style.display = 'none';
-      } else {
-        _compVideo.style.display = 'none';
-        _compImg.src = COMPANION_IMGS[_companion] || COMPANION_IMGS['rabbit'];
-        _compImg.style.display = 'block';
+      const _newSrc = COMPANION_WEBMS[_companion] || COMPANION_WEBMS['pig'];
+      if (_compVideo.getAttribute('src') !== _newSrc) {
+        _compVideo.src = _newSrc;
+        _compVideo.load();
       }
+      _compVideo.style.display = 'block';
+      document.getElementById('companion-img').style.display = 'none';
 
       document.getElementById("question-box").style.display = "flex";
       document.getElementById("question").innerText = q.question;

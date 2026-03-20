@@ -7,14 +7,10 @@ from app.services.sqlite_store import get_conn
 
 # Fixed icon picker options allowed by backend/API validation.
 ALLOWED_CHILD_ICON_KEYS = (
-    "pig",
-    "fox",
-    "owl",
-    "cat",
-    "bear",
-    "rabbit",
-    "lion",
-    "penguin",
+    "pig", "fox", "owl", "cat", "bear", "rabbit", "lion", "penguin",
+    "simba", "nemo", "walle", "moana", "elsa", "spiderman", "mickey",
+    "pooh", "chase", "spongebob", "turtle", "bluey", "hellokitty",
+    "mlp", "peppa", "mario", "dino",
 )
 
 MAX_CHILD_ID_RETRIES = 60
