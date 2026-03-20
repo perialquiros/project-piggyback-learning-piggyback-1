@@ -1448,6 +1448,22 @@
         prefetchUpcomingQuestions(currentIndex + 1);
       }
 
+      // Swap companion webm based on selected companion
+      const _companion = (typeof loadState === 'function' ? loadState().companion : '') || 'pig';
+      const _compVideo = document.getElementById('companion-video');
+      const COMPANION_WEBMS = {
+        pig:       '/assets/Pig_updated.webm',
+        rabbit:    '/assets/Bunny_video.webm',
+        alligator: '/assets/aligator_video.webm',
+      };
+      const _newSrc = COMPANION_WEBMS[_companion] || COMPANION_WEBMS['pig'];
+      if (_compVideo.getAttribute('src') !== _newSrc) {
+        _compVideo.src = _newSrc;
+        _compVideo.load();
+      }
+      _compVideo.style.display = 'block';
+      document.getElementById('companion-img').style.display = 'none';
+
       document.getElementById("question-box").style.display = "flex";
       document.getElementById("question").innerText = q.question;
       document.getElementById("timestamp").innerHTML =
