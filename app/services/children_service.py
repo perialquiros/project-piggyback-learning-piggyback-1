@@ -85,7 +85,7 @@ def get_child(child_id: str, include_inactive: bool = True) -> Optional[Dict[str
         SELECT c.child_id, c.expert_id, c.first_name, c.last_name, c.icon_key,
                c.interaction_mode, c.is_active, c.created_at, c.updated_at, e.display_name AS expert_name
         FROM children c
-        JOIN experts e ON e.expert_id = c.expert_id
+        LEFT JOIN experts e ON e.expert_id = c.expert_id
         WHERE c.child_id = ?
     """
     params: List[Any] = [child_id]
@@ -128,7 +128,7 @@ def list_children(
             SELECT c.child_id, c.expert_id, c.first_name, c.last_name, c.icon_key, c.interaction_mode,
                    c.is_active, c.created_at, c.updated_at, e.display_name AS expert_name
             FROM children c
-            JOIN experts e ON e.expert_id = c.expert_id
+            LEFT JOIN experts e ON e.expert_id = c.expert_id
             {where_sql}
             ORDER BY lower(c.expert_id), lower(c.last_name), lower(c.first_name), c.child_id
             """,
@@ -200,6 +200,7 @@ def update_child(
     icon_key: Optional[str] = None,
     interaction_mode: Optional[str] = None,
     is_active: Optional[bool] = None,
+    expert_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     child_id = normalize_child_id(child_id)
     if not child_id:
@@ -207,6 +208,17 @@ def update_child(
 
     updates: List[str] = []
     values: List[Any] = []
+
+    if expert_id is not None:
+        if expert_id == "":
+            # empty string means unlink
+            updates.append("expert_id = ?")
+            values.append(None)
+        else:
+            cleaned_expert = normalize_expert_id(expert_id)
+            _ensure_expert_exists(cleaned_expert)
+            updates.append("expert_id = ?")
+            values.append(cleaned_expert)
 
     if first_name is not None:
         cleaned_first = normalize_name(first_name)

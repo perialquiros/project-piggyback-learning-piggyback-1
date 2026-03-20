@@ -558,6 +558,7 @@ async def api_admin_update_child(child_id: str, payload: Dict[str, Any] = Body(.
             icon_key=icon_key,
             interaction_mode=interaction_mode,
             is_active=is_active,
+            expert_id=expert_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
