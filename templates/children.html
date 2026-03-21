@@ -304,7 +304,7 @@
     <!-- Score Tracker -->
     <div id="scoreTracker" style="
         position: fixed;
-        top: 80px;
+        top: 110px;
         right: 20px;
         background: white;
         padding: 20px;
@@ -475,6 +475,7 @@ let quizScore = {
     correct: 0,
     wrong: 0,
     total: 0,
+    totalRetries: 0,
     expectedQuestions: 2,
     details: []
 };
@@ -486,6 +487,7 @@ function startQuizTracking(videoId, expectedQuestions = 2) {
     quizScore.total = 0;
     quizScore.expectedQuestions = expectedQuestions;
     quizScore.details = [];
+    quizScore.totalRetries = 0;
     const isPassive = document.body.dataset.interactionMode === 'passive';
     if (!isPassive) {
         document.getElementById('scoreTracker').style.display = 'block';
@@ -509,23 +511,6 @@ function recordAnswer(question, expectedAnswer, userAnswer, status, similarity, 
     quizScore.total++;
     updateScoreDisplay();
 
-
-    // Rewind on Wrong Answer (Strict Mode)
-    if (status !== 'correct' && document.body.dataset.interactionMode === 'strict') {
-        console.log("Strict mode: Answer incorrect, rewinding...");
-        if (window.player && typeof window.player.seekTo === 'function' && typeof window.player.getCurrentTime === 'function') {
-            const rewindTo = Math.max(0, window.player.getCurrentTime() - 10);
-            window.player.seekTo(rewindTo, true);
-            window.player.playVideo(); // Forcing playback to resume
-
-            // Hide the question UI so the child can watch the segment again
-            const qBox = document.getElementById('question-box');
-            const blocker = document.getElementById('blocker');
-            if (qBox) qBox.style.display = 'none';
-            if (blocker) blocker.style.display = 'none';
-        }
-    }
-
     quizScore.details.push({
         question: question,
         expectedAnswer: expectedAnswer,
@@ -539,6 +524,18 @@ function recordAnswer(question, expectedAnswer, userAnswer, status, similarity, 
     if (quizScore.total >= quizScore.expectedQuestions) {
         setTimeout(() => showFinalScore(), 1500);
     }
+}
+
+function recordRetry(question, spoken, sim) {
+  quizScore.totalRetries = (quizScore.totalRetries || 0) + 1;
+  quizScore.details.push({
+    question: question,
+    userAnswer: spoken,
+    status: 'retry',
+    similarity: sim,
+    timestamp: new Date().toISOString()
+  });
+  updateScoreDisplay();
 }
 
 function showQuickFeedback(status) {
@@ -591,6 +588,8 @@ async function saveScoreAndClose() {
                     correct: quizScore.correct,
                     wrong: quizScore.wrong,
                     percentage: percentage,
+                    total_retries: quizScore.totalRetries || 0,
+                    avg_retries_per_question: quizScore.total > 0 ? parseFloat((quizScore.totalRetries / quizScore.total).toFixed(2)) : 0,
                     details: quizScore.details
                 }
             })
@@ -710,6 +709,28 @@ function renderParentReport(container, childName, expertName, data) {
     }).join('');
   }
 
+const totalRetries = data.total_retries || 0;
+const avgRetries = data.avg_retries_per_question != null ? Number(data.avg_retries_per_question).toFixed(1) : '0.0';
+const totalQuizzes = data.total_attempts || 0;
+const avgRetriesPerQuiz = totalQuizzes > 0 ? (totalRetries / totalQuizzes).toFixed(1) : '0.0';
+
+const retryHtml = `
+    <div style="background:white;border-radius:12px;padding:16px 20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px;">
+      <h3 style="margin:0 0 12px;font-size:15px;font-weight:700;color:#2c3e50;">Engagement</h3>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0;">
+        <span style="font-size:14px;color:#2c3e50;">Total Question Retries</span>
+        <span style="font-size:16px;font-weight:700;color:#6a1b9a;">${totalRetries}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f0f0f0;">
+        <span style="font-size:14px;color:#2c3e50;">Avg Retries per Question</span>
+        <span style="font-size:16px;font-weight:700;color:#6a1b9a;">${avgRetries}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;">
+        <span style="font-size:14px;color:#2c3e50;">Avg Retries per Quiz</span>
+        <span style="font-size:16px;font-weight:700;color:#6a1b9a;">${avgRetriesPerQuiz}</span>
+      </div>
+    </div>`;
+
   let recentHtml = '';
   if (recentVideos.length > 0) {
     recentHtml = `
@@ -749,6 +770,8 @@ function renderParentReport(container, childName, expertName, data) {
       </div>
       <div style="font-size:36px;font-weight:800;color:#6a1b9a;">${attempts}</div>
     </div>
+
+    ${retryHtml}
 
     <!-- Category scores -->
     <div style="background:white;border-radius:12px;padding:16px 20px;box-shadow:0 1px 4px rgba(0,0,0,0.08);margin-bottom:12px;">
