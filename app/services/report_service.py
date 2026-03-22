@@ -87,12 +87,14 @@ def get_child_report(child_id: str, limit: int = 10) -> Dict[str, Any]:
 
     if not attempts:
         return {
+            "success": True,
             "child_id": child_id,
-            "summary": {
-                "recent_scores": [],
-                "top_categories": [],
-            },
-            "attempts": [],
+            "overall_score": 0,
+            "total_attempts": 0,
+            "total_retries": 0,
+            "avg_retries_per_question": 0.0,
+            "top_categories": [],
+            "recent_videos": [],
         }
 
     # Enrich each attempt with video title
@@ -104,29 +106,41 @@ def get_child_report(child_id: str, limit: int = 10) -> Dict[str, Any]:
             "video_title": _get_video_title(video_id, downloads_dir),
         })
 
-    # Recent scores: latest 4, newest first
-    recent_scores = [
+    # Overall score: average percentage across all attempts
+    percentages = [a.get("percentage", 0) for a in enriched]
+    overall_score = round(sum(percentages) / len(percentages)) if percentages else 0
+
+    # Total attempts
+    total_attempts = len(enriched)
+
+    # Aggregate retry metrics across all attempts
+    total_retries = sum(a.get("total_retries", 0) for a in enriched)
+    total_questions_answered = sum(a.get("total", 0) for a in enriched)
+    avg_retries_per_question = round(
+        total_retries / total_questions_answered, 2
+    ) if total_questions_answered > 0 else 0.0
+
+    # Top categories
+    top_categories = _compute_top_categories(attempts)
+
+    # Recent videos: latest 4, newest first
+    recent_videos = [
         {
             "video_id": a.get("video_id"),
             "video_title": a.get("video_title"),
             "percentage": a.get("percentage", 0),
-            "questions_correct": a.get("questions_correct", 0),
-            "questions_total": a.get("questions_total", 0),
             "timestamp": a.get("timestamp"),
         }
         for a in reversed(enriched[-4:])
     ]
 
-    top_categories = _compute_top_categories(attempts)
-
-    # Last `limit` attempts for drilldown, newest first
-    detail_attempts = list(reversed(enriched[-limit:]))
-
     return {
+        "success": True,
         "child_id": child_id,
-        "summary": {
-            "recent_scores": recent_scores,
-            "top_categories": top_categories,
-        },
-        "attempts": detail_attempts,
+        "overall_score": overall_score,
+        "total_attempts": total_attempts,
+        "total_retries": total_retries,
+        "avg_retries_per_question": avg_retries_per_question,
+        "top_categories": top_categories,
+        "recent_videos": recent_videos,
     }

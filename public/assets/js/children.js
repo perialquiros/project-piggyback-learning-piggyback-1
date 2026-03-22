@@ -77,6 +77,7 @@
       return isStrict ? "I think we missed it. Let's watch it again." : "That's okay! Let's keep going!";
     }
     const wrongAttempted = new Set();
+    const retryCountMap = new Map();
 
     // ===============================
     // Global State
@@ -925,6 +926,7 @@
 
       asked.clear();
       wrongAttempted.clear();
+      retryCountMap.clear();
       previousTime = 0;
       maxAllowedTime = 0;
       skipLockBypass = false;
@@ -1354,6 +1356,12 @@
     function tryRecordAnswer(question, answer, spoken, status, sim, questionType) {
       if (typeof recordAnswer === "function") {
         recordAnswer(question, answer, spoken, status, sim, questionType);
+      }
+    }
+
+    function tryRecordRetry(question, spoken, sim) {
+      if (typeof recordRetry === 'function') {
+        recordRetry(question, spoken, sim);
       }
     }
 
@@ -1813,20 +1821,35 @@
           }
         }
 
-        if (status === "correct") {
+        if (status === 'correct') {
           const celebrationMessage = pickRandomCelebration();
           asked.add(quesSec);
-
-          correctAnswers++;
-          updateProgress();
-          tryRecordAnswer(q.question, q.answer, spoken, "correct", sim, q.question_type);
-
-          await deliverFeedback({
-            message: celebrationMessage,
-            color: "#22c55e",
-            confetti: true,
-            minVisibleMs: MIN_FEEDBACK_DISPLAY_MS + 200
-          });
+        
+          if (!wrongAttempted.has(quesSec)) {
+            // First attempt was correct — count it
+            correctAnswers++;
+            updateProgress();
+            tryRecordAnswer(q.question, q.answer, spoken, "correct", sim, q.question_type);
+            await deliverFeedback({
+              message: celebrationMessage,
+              color: "#22c55e",
+              confetti: true,
+              minVisibleMs: MIN_FEEDBACK_DISPLAY_MS + 200
+            });
+          } else {
+            // Already counted as wrong on first attempt — this is a retry, track engagement only
+            retryCountMap.set(quesSec, (retryCountMap.get(quesSec) || 0) + 1);
+            tryRecordRetry(q.question, spoken, sim);
+            if (typeof showQuickFeedback === 'function') {
+              showQuickFeedback('correct');
+            }
+            await deliverFeedback({
+              message: celebrationMessage,
+              color: "#22c55e",
+              confetti: true,
+              minVisibleMs: MIN_FEEDBACK_DISPLAY_MS + 200
+            });
+          }
 
           await wait(200);
           resumeVideo();
@@ -1854,13 +1877,16 @@
           if (!wrongAttempted.has(quesSec)) {
             wrongAttempted.add(quesSec);
             tryRecordAnswer(q.question, q.answer, spoken, "almost", sim, q.question_type);
+          } else {
+            retryCountMap.set(quesSec, (retryCountMap.get(quesSec) || 0) + 1);
+            tryRecordRetry(q.question, spoken, sim);
           }
 
           if (isStrictMode) {
             setPlayerTime(rewindTo);
+            asked.delete(quesSec);
           }
 
-          asked.delete(quesSec);
           await wait(200);
           resumeVideo();
           return;
@@ -1878,6 +1904,9 @@
         if (!wrongAttempted.has(quesSec)) {
           wrongAttempted.add(quesSec);
           tryRecordAnswer(q.question, q.answer, spoken, "wrong", sim, q.question_type);
+        } else {
+          retryCountMap.set(quesSec, (retryCountMap.get(quesSec) || 0) + 1);
+          tryRecordRetry(q.question, spoken, sim);
         }
         if (isStrictMode) {
   // STRICT MODE = rewind and retry
@@ -1892,7 +1921,7 @@
         await wait(200);
         resumeVideo();
       } catch (err) {
-        console.error("[Warning] Answer check failed:", err);
+        console.error("[Warning] Answer check failed - full error:", err, err?.stack);
         document.getElementById("feedback").innerText = "[Warning] Could not check answer.";
         setTimeout(resumeVideo, 1000);
       }
